@@ -26,7 +26,7 @@ jobs:
         component:
           - problem-generator
           - transpiler
-          - braket-gateway
+          - gateway
           - optimizer
 
     steps:
