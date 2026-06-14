@@ -1,0 +1,49 @@
+name: Build and push images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docker/**"
+      - ".github/workflows/docker.yaml"
+  pull_request:
+    paths:
+      - "docker/**"
+
+env:
+  REGISTRY: ghcr.io
+  ORG: converged-computing
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      matrix:
+        component:
+          - problem-generator
+          - transpiler
+          - braket-gateway
+          - optimizer
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.component }}
+        uses: docker/build-push-action@v5
+        with:
+          context: docker/${{ matrix.component }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.ORG }}/quantum-braket-${{ matrix.component }}:latest
+            ${{ env.REGISTRY }}/${{ env.ORG }}/quantum-braket-${{ matrix.component }}:${{ github.sha }}
