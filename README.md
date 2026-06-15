@@ -2,74 +2,115 @@
 
 Hybrid quantum-classical workflow experiments using [AWS Braket](https://aws.amazon.com/braket/) as the quantum backend. These experiments implement a Quantum Approximate Optimization Algorithm (QAOA) for graph max-cut, structured as a pipeline of four Kubernetes pods that can be scheduled independently or as a group.
 
-The experiments are designed to run with the [Fluence](https://github.com/converged-computing/fluence) scheduler plugin for Kubernetes, which uses the Fluxion graph-based scheduler to do informed pod placement. However, the pods themselves have no dependency on Fluence and can run under any Kubernetes scheduler (or other containerized environment) or directly via `docker run`.
+The experiments are designed to run with the [Fluence](https://github.com/converged-computing/fluence) scheduler plugin for Kubernetes, which uses the Fluxion graph-based scheduler to do informed pod placement. However, the pods themselves have no dependency on Fluence and can run under any Kubernetes scheduler or directly via `docker run`.
 
 All quantum execution uses the **AWS Braket SV1 state vector simulator**, which is deterministic and reproducible — suitable for paper experiments. No real QPU access or QPU credits are required.
 
-## Pipeline overview
+## Pipelines
+
+Two workload types, each a separate pod pipeline sharing the same emptyDir workspace:
+
+### Gate-based QAOA (max-cut on k-regular graphs)
 
 ```console
-┌─────────────────────┐
-│  problem-generator  │  Generates a random k-regular graph and writes
-│                     │  the max-cut problem instance to a shared volume.
-└────────┬────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│     transpiler      │  Builds the QAOA ansatz circuit for the given
-│                     │  problem and target backend topology.
-└────────┬────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│   braket-gateway    │  Submits circuits to AWS Braket SV1, polls for
-│                     │  results, and writes cost values back.
-└────────┬────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│      optimizer      │  Runs COBYLA to update variational parameters;
-│                     │  loops until convergence, writes final results.
-└─────────────────────┘
+problem-generator → transpiler → gateway → optimizer
 ```
 
-## Repository layout
+Backends: SV1 (default), TN1, IonQ Forte, Rigetti Ankaa-3 / Cepheus.
+Fluence resource type: `gate-simulator` or `gate-qpu`.
 
+### Analog Hamiltonian Simulation (MIS on unit disk graphs)
+
+```console
+ahs-problem-generator → ahs-gateway → mis-postprocessor
 ```
-quantum-braket/
-├── docker/
-│   ├── problem-generator/   Dockerfile + entrypoint for the problem pod
-│   ├── transpiler/          Dockerfile + entrypoint for the transpiler pod
-│   ├── braket-gateway/      Dockerfile + entrypoint for the Braket gateway pod
-│   └── optimizer/           Dockerfile + entrypoint for the optimizer pod
-├── pods/
-│   ├── problem-generator.yaml
-│   ├── transpiler.yaml
-│   ├── braket-gateway.yaml
-│   └── optimizer.yaml
-├── experiments/
-│   ├── 1-scheduling/        Scheduler overhead and placement quality
-│   ├── 2-routing/           Simulator vs. QPU adaptive routing
-│   ├── 3-colocation/        Classical pod co-location latency
-│   └── 4-scaling/           Problem size scaling (5–50 qubits)
-├── scripts/
-│   ├── run-pipeline.sh      Run all four pods end-to-end locally
-│   └── setup-aws.sh         Configure AWS credentials and Braket region
-└── hack/
-    └── kind-config.yaml     Local kind cluster config for development
-```
+
+Backends: local AHS simulator (default), QuEra Aquila.
+Fluence resource type: `ahs`.
+
+**These pipelines are mutually incompatible at the backend level.** Submitting
+a gate circuit to an AHS backend (or vice versa) fails at the AWS API. Fluence
+enforces correct routing at schedule time via typed QPU resource requests —
+a pod requesting `fluxion.flux-framework.org/ahs` will never be matched to
+a gate-simulator or gate-qpu backend, and vice versa.
+
 
 ## Prerequisites
 
-- Kubernetes cluster (or [kind](https://kind.sigs.k8s.io/) for local dev)
+- [kind](https://kind.sigs.k8s.io/docs/user/quick-start/#installing-from-release-binaries) (for local dev) or an existing Kubernetes cluster
 - AWS account with Braket enabled in `us-east-1` (SV1 is available in all Braket regions)
 - AWS credentials available as a Kubernetes Secret (see below)
 - `kubectl` configured to point at your cluster
 - Docker (to build images) or access to the pre-built images at `ghcr.io/converged-computing/quantum-braket-*`
 
+## Cluster setup with Fluence
+
+These experiments are designed to run with [Fluence](https://github.com/converged-computing/fluence),
+the Kubernetes scheduler plugin that uses the Fluxion graph-based scheduler.
+The pods work with any Kubernetes scheduler, but the scheduling experiments
+(experiment 1) require Fluence.
+
+### 1. Create a kind cluster with gang scheduling feature gates
+
+Fluence requires `GangScheduling` and `GenericWorkload` feature gates. Download
+the latest kind config directly from the Fluence repo:
+
+```bash
+wget https://raw.githubusercontent.com/converged-computing/fluence/main/deploy/kind-config.yaml
+kind create cluster --image kindest/node:v1.36.1 --config kind-config.yaml
+```
+
+### 2. Install Fluence
+
+```bash
+docker pull ghcr.io/converged-computing/fluence:latest
+kind load docker-image ghcr.io/converged-computing/fluence:latest
+kubectl apply -f https://raw.githubusercontent.com/converged-computing/fluence/main/deploy/fluence.yaml
+```
+
+Verify:
+
+```bash
+kubectl get pods -n kube-system | grep fluence
+```
+
+### 3. Install the quantum resources add-on
+
+This registers QPU backends in the Fluxion graph and advertises them via a
+device plugin so the scheduler can match quantum resource requests:
+
+```bash
+# Use our AWS Braket-specific resources config (not the IBM one from upstream)
+kubectl apply -f hack/fluence-resources.yaml
+kubectl rollout restart deployment/fluence -n kube-system
+
+# Confirm QPU resources are visible on nodes
+kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.allocatable}{"\n"}{end}' \
+  | grep fluxion.flux-framework.org
+```
+
+The `hack/fluence-resources.yaml` in this repo registers the AWS Braket SV1 and
+TN1 simulators as QPU vertices. Real QPU backends (IonQ Aria, Rigetti Ankaa-3)
+are present but commented out — uncomment to enable them if you have QPU access
+on your AWS account.
+
+To use Fluence scheduling, uncomment `schedulerName: fluence` in the pod
+manifests under `pods/`. Leave it commented to use the default scheduler.
+
 ## Quick start
 
-### 1. Create the AWS credentials secret
+### 1. Enable the Braket service-linked IAM role
+
+This is a one-time step per AWS account. If you have never used Braket before,
+the required IAM service role won't exist yet:
+
+```bash
+aws iam create-service-linked-role --aws-service-name braket.amazonaws.com
+```
+
+If the role already exists you will get a harmless error saying so — safe to ignore.
+
+### 2. Create the AWS credentials secret
 
 ```bash
 kubectl create secret generic aws-braket-credentials \
@@ -78,23 +119,14 @@ kubectl create secret generic aws-braket-credentials \
   --from-literal=AWS_DEFAULT_REGION=us-east-1
 ```
 
-### 2. Create the shared workspace PVC
+### 2. Run the pipeline
 
 ```bash
-kubectl apply -f hack/workspace-pvc.yaml
-```
+# Default scheduler
+SCHEDULER=default bash experiments/1-scheduling/run-pipeline.sh
 
-### 3. Run the pipeline
-
-```bash
-# Apply all four pods in order (each waits for the previous via initContainers)
-kubectl apply -f pods/problem-generator.yaml
-kubectl apply -f pods/transpiler.yaml
-kubectl apply -f pods/braket-gateway.yaml
-kubectl apply -f pods/optimizer.yaml
-
-# Or use the convenience script
-./scripts/run-pipeline.sh
+# Or with Fluence (requires Fluence installed — see Cluster setup above)
+SCHEDULER=fluence bash experiments/1-scheduling/run-pipeline.sh
 ```
 
 ### 4. Check results
