@@ -192,7 +192,7 @@ def main():
             "best_gammas": opt["best_gammas"],
             "best_betas": opt["best_betas"],
             "n_iterations": opt["n_iterations"],
-            "converged": opt["converged"],
+            "converged": bool(opt["converged"]),
             "scipy_message": opt["scipy_message"],
             "approximation_ratio": approx_ratio,
             "total_elapsed_s": elapsed,
@@ -211,6 +211,21 @@ def main():
     print(f"  converged          : {opt['converged']}")
     print(f"  total elapsed      : {elapsed:.2f}s")
     print(f"  results written to : {results_path}")
+
+    # Structured summary for log scraping — collect.sh looks for this line
+    summary = {
+        "n_nodes":             problem["n_nodes"],
+        "n_edges":             len(problem["edges"]),
+        "seed":                problem["seed"],
+        "p":                   p,
+        "n_shots":             n_shots,
+        "best_cost":           round(opt["best_cost"], 6),
+        "approximation_ratio": round(approx_ratio, 6),
+        "n_iterations":        opt["n_iterations"],
+        "converged":           bool(opt["converged"]),
+        "total_elapsed_s":     round(elapsed, 3),
+    }
+    print(f"[optimizer] SUMMARY {json.dumps(summary)}")
 
 
 if __name__ == "__main__":

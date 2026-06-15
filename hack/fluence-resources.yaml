@@ -1,0 +1,140 @@
+# fluence-resources.yaml — Braket QPU resource graph for Fluence
+#
+# Registers AWS Braket backends as typed QPU vertices in the Fluxion
+# resource graph. Each backend has a distinct type so pods can request
+# the correct backend class at schedule time:
+#
+#   gate-simulator  — classical simulators (SV1, TN1, DM1)
+#   gate-qpu        — gate-based QPUs (IonQ, Rigetti, IQM, AQT)
+#   ahs             — Analog Hamiltonian Simulation (QuEra Aquila)
+#
+# This type distinction is a CORRECTNESS requirement, not just an
+# optimization: submitting a gate circuit to an AHS backend (or vice
+# versa) fails at the AWS API. Fluence enforces correct routing at
+# schedule time via typed QPU resource requests.
+#
+# The count field sets the maximum number of concurrent tasks Fluence
+# will dispatch to each backend.
+#
+# Apply with:
+#   kubectl apply -f hack/fluence-resources.yaml
+#   kubectl rollout restart deployment/fluence -n kube-system
+#
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluence-resources
+  namespace: kube-system
+  labels:
+    app: fluence
+data:
+  resources.yaml: |
+    backends:
+
+      # ── Gate-based simulators ─────────────────────────────────────────
+
+      - name: sv1
+        type: gate-simulator
+        count: 8
+        qubits: 34
+        arn: "arn:aws:braket:::device/quantum-simulator/amazon/sv1"
+        region: us-east-1
+        connectivity: all-to-all
+        note: "State vector sim; best for dense circuits <= 28 qubits"
+
+      - name: tn1
+        type: gate-simulator
+        count: 4
+        qubits: 50
+        arn: "arn:aws:braket:::device/quantum-simulator/amazon/tn1"
+        region: us-east-1
+        connectivity: sparse-preferred
+        note: "Tensor network sim; best for sparse/local-gate circuits > 28 qubits"
+
+      - name: dm1
+        type: gate-simulator
+        count: 4
+        qubits: 17
+        arn: "arn:aws:braket:::device/quantum-simulator/amazon/dm1"
+        region: us-east-1
+        connectivity: all-to-all
+        note: "Density matrix sim; use for noise modeling experiments"
+
+      # ── Gate-based QPUs ───────────────────────────────────────────────
+
+      - name: ionq_forte
+        type: gate-qpu
+        count: 1
+        qubits: 36
+        arn: "arn:aws:braket:us-east-1::device/qpu/ionq/Forte-Enterprise-1"
+        region: us-east-1
+        connectivity: all-to-all
+        note: "Trapped ion; best for deep circuits needing arbitrary qubit connectivity"
+
+      - name: rigetti_ankaa3
+        type: gate-qpu
+        count: 1
+        qubits: 84
+        arn: "arn:aws:braket:us-west-1::device/qpu/rigetti/Ankaa-3"
+        region: us-west-1
+        connectivity: heavy-hex
+        note: "Superconducting; best for shallow circuits matching heavy-hex topology"
+
+      - name: rigetti_cepheus
+        type: gate-qpu
+        count: 1
+        qubits: 108
+        arn: "arn:aws:braket:us-west-1::device/qpu/rigetti/Cepheus-1-108Q"
+        region: us-west-1
+        connectivity: heavy-hex
+        note: "Largest gate QPU on Braket; chemical sim and large optimization"
+
+      - name: iqm_garnet
+        type: gate-qpu
+        count: 1
+        qubits: 20
+        arn: "arn:aws:braket:eu-north-1::device/qpu/iqm/Garnet"
+        region: eu-north-1
+        connectivity: star
+        note: "IQM superconducting; EU region"
+
+      - name: iqm_emerald
+        type: gate-qpu
+        count: 1
+        qubits: 20
+        arn: "arn:aws:braket:eu-north-1::device/qpu/iqm/Emerald"
+        region: eu-north-1
+        connectivity: star
+        note: "IQM superconducting; EU region"
+
+      - name: aqt_ibex
+        type: gate-qpu
+        count: 1
+        qubits: 20
+        arn: "arn:aws:braket:eu-north-1::device/qpu/aqt/IBEX-Q1"
+        region: eu-north-1
+        connectivity: all-to-all
+        note: "AQT trapped ion (40Ca+); EU region"
+
+      # ── Analog Hamiltonian Simulation ─────────────────────────────────
+      # type: ahs — INCOMPATIBLE with gate circuits.
+      # A pod requesting fluxion.flux-framework.org/ahs will never be
+      # matched to a gate-simulator or gate-qpu backend.
+
+      - name: ahs_local
+        type: ahs
+        count: 8
+        qubits: 256
+        arn: "local"
+        region: local
+        connectivity: programmable-2d
+        note: "Local AHS simulator; free, deterministic, for development only"
+
+      - name: aquila
+        type: ahs
+        count: 1
+        qubits: 256
+        arn: "arn:aws:braket:us-east-1::device/qpu/quera/Aquila"
+        region: us-east-1
+        connectivity: programmable-2d
+        note: "QuEra Aquila neutral-atom QPU; MIS and quantum simulation"

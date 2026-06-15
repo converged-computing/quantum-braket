@@ -1,0 +1,11 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: quantum-braket
+nodes:
+  - role: control-plane
+  - role: worker
+  - role: worker
+  - role: worker
+# Three workers let us test co-location experiments locally.
+# AWS credentials are passed via kubectl secret, not mounted files,
+# so no extra hostPath mounts are needed.
