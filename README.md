@@ -65,13 +65,6 @@ kind create cluster --image kindest/node:v1.36.1 --config kind-config.yaml
 ```bash
 docker pull ghcr.io/converged-computing/fluence:latest
 kind load docker-image ghcr.io/converged-computing/fluence:latest
-kubectl apply -f https://raw.githubusercontent.com/converged-computing/fluence/main/deploy/fluence.yaml
-```
-
-Verify:
-
-```bash
-kubectl get pods -n kube-system | grep fluence
 ```
 
 ### 3. Install the quantum resources add-on
@@ -80,26 +73,41 @@ This registers QPU backends in the Fluxion graph and advertises them via a
 device plugin so the scheduler can match quantum resource requests:
 
 ```bash
-# Use our AWS Braket-specific resources config (not the IBM one from upstream)
+# Use our AWS Braket-specific resources config
 kubectl apply -f hack/fluence-resources.yaml
+kubectl apply -f https://raw.githubusercontent.com/converged-computing/fluence/main/deploy/device-plugin.yaml
+
+# deploy and verify
+kubectl apply -f https://raw.githubusercontent.com/converged-computing/fluence/main/deploy/fluence.yaml
+kubectl get pods -n kube-system | grep fluence
+```
+```console
+fluence-78d455fb5c-lkts7                     1/1     Running   0          39s
+fluence-deviceplugin-7lkns                   1/1     Running   0          46s
+fluence-deviceplugin-9qvrw                   1/1     Running   0          46s
+fluence-deviceplugin-k69kw                   1/1     Running   0          46s
+fluence-webhook-59f848df6-m82hj              1/1     Running   0          39s
+```
+
+Note that webhooks are not always immediate to be ready.
+
+```bash
+# if you had previously deployed and need to restart
 kubectl rollout restart deployment/fluence -n kube-system
 
 # Confirm QPU resources are visible on nodes
 kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.allocatable}{"\n"}{end}' \
   | grep fluxion.flux-framework.org
 ```
+```console
+kind-control-plane	{"cpu":"16","ephemeral-storage":"982292956Ki","fluxion.flux-framework.org/qdevice":"1k","fluxion.flux-framework.org/qpu":"1k","fluxion.flux-framework.org/qubit":"1k","hugepages-1Gi":"0","hugepages-2Mi":"0","memory":"61400752Ki","pods":"110"}
+kind-worker	{"cpu":"16","ephemeral-storage":"982292956Ki","fluxion.flux-framework.org/qdevice":"1k","fluxion.flux-framework.org/qpu":"1k","fluxion.flux-framework.org/qubit":"1k","hugepages-1Gi":"0","hugepages-2Mi":"0","memory":"61400752Ki","pods":"110"}
+kind-worker2	{"cpu":"16","ephemeral-storage":"982292956Ki","fluxion.flux-framework.org/qdevice":"1k","fluxion.flux-framework.org/qpu":"1k","fluxion.flux-framework.org/qubit":"1k","hugepages-1Gi":"0","hugepages-2Mi":"0","memory":"61400752Ki","pods":"110"}
+```
 
-The `hack/fluence-resources.yaml` in this repo registers the AWS Braket SV1 and
-TN1 simulators as QPU vertices. Real QPU backends (IonQ Aria, Rigetti Ankaa-3)
-are present but commented out — uncomment to enable them if you have QPU access
-on your AWS account.
+The `hack/fluence-resources.yaml` in this repo registers the AWS Braket simulators and real QPU backends as QPU vertices.
 
-To use Fluence scheduling, uncomment `schedulerName: fluence` in the pod
-manifests under `pods/`. Leave it commented to use the default scheduler.
-
-## Quick start
-
-### 1. Enable the Braket service-linked IAM role
+### 4. Enable the Braket service-linked IAM role
 
 This is a one-time step per AWS account. If you have never used Braket before,
 the required IAM service role won't exist yet:
@@ -110,30 +118,13 @@ aws iam create-service-linked-role --aws-service-name braket.amazonaws.com
 
 If the role already exists you will get a harmless error saying so — safe to ignore.
 
-### 2. Create the AWS credentials secret
+### 5. Create the AWS credentials secret
 
 ```bash
 kubectl create secret generic aws-braket-credentials \
   --from-literal=AWS_ACCESS_KEY_ID=<your-key-id> \
   --from-literal=AWS_SECRET_ACCESS_KEY=<your-secret-key> \
   --from-literal=AWS_DEFAULT_REGION=us-east-1
-```
-
-### 2. Run the pipeline
-
-```bash
-# Default scheduler
-SCHEDULER=default bash experiments/1-scheduling/run-pipeline.sh
-
-# Or with Fluence (requires Fluence installed — see Cluster setup above)
-SCHEDULER=fluence bash experiments/1-scheduling/run-pipeline.sh
-```
-
-### 4. Check results
-
-```bash
-kubectl logs pod/qaoa-optimizer
-# Results are also written to /workspace/results.json on the PVC
 ```
 
 ## Experiments
@@ -150,17 +141,22 @@ Each experiment directory contains a `README.md` with the hypothesis, method, an
 ## Building images
 
 ```bash
-docker build -t ghcr.io/converged-computing/quantum-braket-problem-generator:latest \
-  docker/problem-generator/
-
-docker build -t ghcr.io/converged-computing/quantum-braket-transpiler:latest \
-  docker/transpiler/
-
-docker build -t ghcr.io/converged-computing/quantum-braket-braket-gateway:latest \
-  docker/braket-gateway/
-
-docker build -t ghcr.io/converged-computing/quantum-braket-optimizer:latest \
-  docker/optimizer/
+docker build -t ghcr.io/converged-computing/quantum-braket-problem-generator:latest docker/problem-generator/
+docker build -t ghcr.io/converged-computing/quantum-braket-transpiler:latest docker/transpiler/
+docker build -t ghcr.io/converged-computing/quantum-braket-gateway:latest docker/gateway/
+docker build -t ghcr.io/converged-computing/quantum-braket-optimizer:latest docker/optimizer/
+docker build -t ghcr.io/converged-computing/quantum-braket-ahs-gateway:latest docker/ahs-gateway/
+docker build -t ghcr.io/converged-computing/quantum-braket-ahs-problem-generator:latest docker/ahs-problem-generator/
+docker build -t ghcr.io/converged-computing/quantum-braket-mis-postprocessor:latest docker/mis-postprocessor/
+```
+```bash
+docker push ghcr.io/converged-computing/quantum-braket-problem-generator:latest
+docker push ghcr.io/converged-computing/quantum-braket-transpiler:latest
+docker push ghcr.io/converged-computing/quantum-braket-gateway:latest
+docker push ghcr.io/converged-computing/quantum-braket-optimizer:latest
+docker push ghcr.io/converged-computing/quantum-braket-ahs-gateway:latest
+docker push ghcr.io/converged-computing/quantum-braket-ahs-problem-generator:latest
+docker push ghcr.io/converged-computing/quantum-braket-mis-postprocessor:latest
 ```
 
 ## AWS Braket costs

@@ -92,7 +92,10 @@ def build_circuit_for_params(n_qubits, edges, gammas, betas):
 
 def main():
     workspace   = os.environ.get("WORKSPACE", "/workspace")
-    device_arn  = os.environ.get("BRAKET_DEVICE", SV1_ARN)
+    # FLUXION_ARN is injected by the Fluence webhook when scheduled via Fluence.
+    # Fall back to BRAKET_DEVICE for local/non-Fluence runs.
+    device_arn  = os.environ.get("FLUXION_ARN") or os.environ.get("BRAKET_DEVICE", SV1_ARN)
+    qrmi_type   = os.environ.get("FLUXION_QRMI_TYPE", "braket-gate")
     n_shots     = int(os.environ.get("N_SHOTS", 1000))
     iteration   = int(os.environ.get("ITERATION", 0))
 
@@ -129,15 +132,21 @@ def main():
         sys.exit(1)
 
     # --- submit to Braket ---
-    t0 = time.time()
+    t_submit = time.time()
+    print(f"[braket-gateway] TIMING submit_ts={t_submit:.6f}")
     try:
         device = AwsDevice(device_arn)
         task   = device.run(circ, shots=n_shots)
+        t_queued = time.time()
+        print(f"[braket-gateway] TIMING queued_ts={t_queued:.6f}")
         result = task.result()
+        t_result = time.time()
+        print(f"[braket-gateway] TIMING result_ts={t_result:.6f}")
     except Exception as e:
         print(f"[braket-gateway] ERROR submitting to Braket: {e}", file=sys.stderr)
         sys.exit(1)
-    elapsed = time.time() - t0
+    elapsed = t_result - t_submit
+    qpu_queue_wait = t_result - t_queued
 
     # --- compute cost ---
     counts = result.measurement_counts
@@ -160,13 +169,17 @@ def main():
             except json.JSONDecodeError:
                 history = []
     history.append({
-        "iteration": iteration,
-        "cost": cost,
-        "gammas": gammas,
-        "betas": betas,
-        "elapsed_s": elapsed,
-        "n_shots": n_shots,
-        "device": device_arn,
+        "iteration":       iteration,
+        "cost":            cost,
+        "gammas":          gammas,
+        "betas":           betas,
+        "elapsed_s":       elapsed,
+        "qpu_queue_wait_s": qpu_queue_wait,
+        "submit_ts":       t_submit,
+        "queued_ts":       t_queued,
+        "result_ts":       t_result,
+        "n_shots":         n_shots,
+        "device":          device_arn,
     })
     with open(history_path, "w") as f:
         json.dump(history, f, indent=2)

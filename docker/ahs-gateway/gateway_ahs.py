@@ -130,7 +130,9 @@ def is_independent_set(bitstring, edges):
 
 
 def main():
-    device_arn = os.environ.get("BRAKET_DEVICE", LOCAL_AHS_ARN)
+    # FLUXION_ARN is injected by the Fluence webhook when scheduled via Fluence.
+    # Fall back to BRAKET_DEVICE for local/non-Fluence runs.
+    device_arn = os.environ.get("FLUXION_ARN") or os.environ.get("BRAKET_DEVICE", LOCAL_AHS_ARN)
     n_shots    = int(os.environ.get("N_SHOTS", 100))
     workspace  = os.environ.get("WORKSPACE", "/workspace")
     total_time = float(os.environ.get("TOTAL_TIME", 4.0))
