@@ -1,0 +1,2 @@
+backend,pipeline,scheduler,n_pods_batch,n_nodes_or_atoms,n_shots,max_iter,pod_name,seed,pod_wall_s,batch_wall_s,n_iterations,total_qpu_wait_s,total_circuit_time_s,avg_qpu_wait_s,avg_circuit_time_s,approximation_ratio,converged,total_elapsed_s,timestamp
+rigetti_cepheus,gate,default,1,14,100,5,qaoa-exp-rigetti-cepheus-n1-q14-0,100,62.0,66.261,1,5.991,9.391,5.991,9.391,0.47381,False,46.971,2026-06-18T22:09:41.808577+00:00

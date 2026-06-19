@@ -1,0 +1,11 @@
+backend,pipeline,scheduler,n_pods_batch,n_nodes_or_atoms,n_shots,max_iter,pod_name,seed,pod_wall_s,batch_wall_s,n_iterations,total_qpu_wait_s,total_circuit_time_s,avg_qpu_wait_s,avg_circuit_time_s,approximation_ratio,converged,total_elapsed_s,timestamp
+iqm_emerald,gate,default,10,10,100,5,qaoa-exp-iqm-emerald-n10-q10-0,100,890.0,1021.099,1,45.392,50.386,45.392,50.386,0.574667,False,834.435,2026-06-18T19:25:26.291814+00:00
+iqm_emerald,gate,default,10,10,100,5,qaoa-exp-iqm-emerald-n10-q10-1,101,926.0,1021.099,1,102.312,107.674,102.312,107.674,0.534,False,812.915,2026-06-18T19:25:26.441573+00:00
+iqm_emerald,gate,default,10,10,100,5,qaoa-exp-iqm-emerald-n10-q10-2,102,894.0,1021.099,1,73.009,78.124,73.009,78.124,0.583333,False,810.13,2026-06-18T19:25:26.588831+00:00
+iqm_emerald,gate,default,10,10,100,5,qaoa-exp-iqm-emerald-n10-q10-3,103,866.0,1021.099,1,45.262,49.283,45.262,49.283,0.582,False,811.404,2026-06-18T19:25:26.735345+00:00
+iqm_emerald,gate,default,10,10,100,5,qaoa-exp-iqm-emerald-n10-q10-4,104,923.0,1021.099,1,76.173,81.231,76.173,81.231,0.576,False,836.218,2026-06-18T19:25:26.875016+00:00
+iqm_emerald,gate,default,10,10,100,5,qaoa-exp-iqm-emerald-n10-q10-5,105,986.0,1021.099,1,135.206,139.284,135.206,139.284,0.546,False,841.436,2026-06-18T19:25:27.022136+00:00
+iqm_emerald,gate,default,10,10,100,5,qaoa-exp-iqm-emerald-n10-q10-6,106,950.0,1021.099,1,105.208,108.792,105.208,108.792,0.564667,False,834.944,2026-06-18T19:25:27.172282+00:00
+iqm_emerald,gate,default,10,10,100,5,qaoa-exp-iqm-emerald-n10-q10-7,107,1011.0,1021.099,1,161.048,165.768,161.048,165.768,0.546,False,839.145,2026-06-18T19:25:27.320282+00:00
+iqm_emerald,gate,default,10,10,100,5,qaoa-exp-iqm-emerald-n10-q10-8,108,981.0,1021.099,1,130.95,134.717,130.95,134.717,0.608,False,840.809,2026-06-18T19:25:27.458926+00:00
+iqm_emerald,gate,default,10,10,100,5,qaoa-exp-iqm-emerald-n10-q10-9,109,1014.0,1021.099,1,167.791,171.244,167.791,171.244,0.548,False,837.031,2026-06-18T19:25:27.598618+00:00

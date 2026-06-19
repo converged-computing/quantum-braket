@@ -161,10 +161,15 @@ def main():
           f"p={p}, n_shots={n_shots}, mode={gateway_mode}")
 
     # Run the initial circuit evaluation (iteration 0) before the loop
-    # so that cost.json exists when COBYLA calls objective() the first time
+    # so that cost.json exists when COBYLA calls objective() the first time.
+    # Skip if cost.json already exists — the braket-gateway initContainer
+    # already ran iteration 0 and we must not re-submit to the QPU.
+    cost_path = os.path.join(workspace, "cost.json")
     write_params(workspace, json.load(open(params_path))["gammas"],
                  json.load(open(params_path))["betas"], p)
-    if gateway_mode == "subprocess":
+    if os.path.exists(cost_path):
+        print(f"[optimizer] cost.json found from initContainer, skipping iteration 0 resubmit")
+    elif gateway_mode == "subprocess":
         call_gateway_subprocess(workspace, 0, n_shots)
 
     t0 = time.time()

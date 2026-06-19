@@ -1,0 +1,6 @@
+backend,pipeline,scheduler,n_pods_batch,n_nodes_or_atoms,n_shots,max_iter,pod_name,seed,pod_wall_s,batch_wall_s,n_iterations,total_qpu_wait_s,total_circuit_time_s,avg_qpu_wait_s,avg_circuit_time_s,approximation_ratio,converged,total_elapsed_s,timestamp
+rigetti_cepheus,gate,default,5,14,100,5,qaoa-exp-rigetti-cepheus-n5-q14-0,100,45.0,61.874,1,2.017,3.927,2.017,3.927,0.478571,False,35.34,2026-06-18T22:10:45.113077+00:00
+rigetti_cepheus,gate,default,5,14,100,5,qaoa-exp-rigetti-cepheus-n5-q14-1,101,50.0,61.874,1,5.401,7.106,5.401,7.106,0.498095,False,37.724,2026-06-18T22:10:45.374186+00:00
+rigetti_cepheus,gate,default,5,14,100,5,qaoa-exp-rigetti-cepheus-n5-q14-2,102,56.0,61.874,1,4.997,7.175,4.997,7.175,0.494762,False,43.741,2026-06-18T22:10:45.627704+00:00
+rigetti_cepheus,gate,default,5,14,100,5,qaoa-exp-rigetti-cepheus-n5-q14-3,103,56.0,61.874,1,4.766,6.712,4.766,6.712,0.513333,False,43.74,2026-06-18T22:10:45.874222+00:00
+rigetti_cepheus,gate,default,5,14,100,5,qaoa-exp-rigetti-cepheus-n5-q14-4,104,50.0,61.874,1,5.097,6.783,5.097,6.783,0.5,False,37.718,2026-06-18T22:10:46.128354+00:00

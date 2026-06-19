@@ -118,21 +118,23 @@ Available backends (cheapest to most expensive):
 Note that before using actual quantum devices you need to accept user agreements, per region. The URLs look like this [https://us-west-1.console.aws.amazon.com/braket/home?region=us-west-1#/permissions?tab=general](https://us-west-1.console.aws.amazon.com/braket/home?region=us-west-1#/permissions?tab=general)
 
 ```bash
-# Step 2 — start here, free
+# problem size 10
 python3 run_experiment.py --backend sv1
-
-# Step 3 — once sv1 works, try TN1 and DM1
 python3 run_experiment.py --backend tn1
 python3 run_experiment.py --backend dm1
-
-# Step 4 — first real QPU, cheapest
 python3 run_experiment.py --backend rigetti_cepheus
-
-# Intermediate and more expensive
 python3 run_experiment.py --backend iqm_garnet
 python3 run_experiment.py --backend iqm_emerald
-python3 run_experiment.py --backend aqt_ibex
-python3 run_experiment.py --backend ionq_forte
+# python3 run_experiment.py --backend aqt_ibex
+# python3 run_experiment.py --backend ionq_forte
+
+# problem size 14
+python3 run_experiment.py --backend sv1 --qubit-sizes 14
+python3 run_experiment.py --backend tn1 --qubit-sizes 14
+python3 run_experiment.py --backend dm1 --qubit-sizes 14
+python3 run_experiment.py --backend rigetti_cepheus --qubit-sizes 14
+python3 run_experiment.py --backend iqm_garnet --qubit-sizes 14
+python3 run_experiment.py --backend iqm_emerald --qubit-sizes 14
 ```
 
 Note from V- the first day with TN1, DM1, SV1, and rigetti was about ~18 so the cost estimates are too high.

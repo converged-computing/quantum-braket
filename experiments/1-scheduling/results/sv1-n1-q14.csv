@@ -1,0 +1,2 @@
+backend,pipeline,scheduler,n_pods_batch,n_nodes_or_atoms,n_shots,max_iter,pod_name,seed,pod_wall_s,batch_wall_s,n_iterations,total_qpu_wait_s,total_circuit_time_s,avg_qpu_wait_s,avg_circuit_time_s,approximation_ratio,converged,total_elapsed_s,timestamp
+sv1,gate,default,1,14,100,5,qaoa-exp-sv1-n1-q14-0,100,45.0,51.034,1,2.253,5.196,2.253,5.196,0.604286,False,33.391,2026-06-18T21:25:21.562536+00:00

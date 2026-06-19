@@ -1,0 +1,11 @@
+backend,pipeline,scheduler,n_pods_batch,n_nodes_or_atoms,n_shots,max_iter,pod_name,seed,pod_wall_s,batch_wall_s,n_iterations,total_qpu_wait_s,total_circuit_time_s,avg_qpu_wait_s,avg_circuit_time_s,approximation_ratio,converged,total_elapsed_s,timestamp
+tn1,gate,default,10,10,100,5,qaoa-exp-tn1-n10-q10-0,100,421.0,524.567,0,0,0,,,0.601333,False,296.827,2026-06-18T05:28:18.893842+00:00
+tn1,gate,default,10,10,100,5,qaoa-exp-tn1-n10-q10-1,101,498.0,524.567,0,0,0,,,0.594667,False,340.825,2026-06-18T05:28:19.150100+00:00
+tn1,gate,default,10,10,100,5,qaoa-exp-tn1-n10-q10-2,102,330.0,524.567,0,0,0,,,0.587333,False,190.408,2026-06-18T05:28:19.395410+00:00
+tn1,gate,default,10,10,100,5,qaoa-exp-tn1-n10-q10-3,103,403.0,524.567,0,0,0,,,0.653333,False,349.354,2026-06-18T05:28:19.643073+00:00
+tn1,gate,default,10,10,100,5,qaoa-exp-tn1-n10-q10-4,104,498.0,524.567,0,0,0,,,0.616,False,329.865,2026-06-18T05:28:19.841924+00:00
+tn1,gate,default,10,10,100,5,qaoa-exp-tn1-n10-q10-5,105,517.0,524.567,0,0,0,,,0.644667,False,302.593,2026-06-18T05:28:19.984012+00:00
+tn1,gate,default,10,10,100,5,qaoa-exp-tn1-n10-q10-6,106,463.0,524.567,0,0,0,,,0.636,False,336.849,2026-06-18T05:28:20.125254+00:00
+tn1,gate,default,10,10,100,5,qaoa-exp-tn1-n10-q10-7,107,458.0,524.567,0,0,0,,,0.62,False,353.074,2026-06-18T05:28:20.268243+00:00
+tn1,gate,default,10,10,100,5,qaoa-exp-tn1-n10-q10-8,108,496.0,524.567,0,0,0,,,0.678,False,218.863,2026-06-18T05:28:20.412302+00:00
+tn1,gate,default,10,10,100,5,qaoa-exp-tn1-n10-q10-9,109,466.0,524.567,0,0,0,,,0.502667,False,325.778,2026-06-18T05:28:20.554399+00:00

@@ -1,0 +1,2 @@
+backend,pipeline,scheduler,n_pods_batch,n_nodes_or_atoms,n_shots,max_iter,pod_name,seed,pod_wall_s,batch_wall_s,n_iterations,total_qpu_wait_s,total_circuit_time_s,avg_qpu_wait_s,avg_circuit_time_s,approximation_ratio,converged,total_elapsed_s,timestamp
+iqm_garnet,gate,default,1,10,100,5,qaoa-exp-iqm-garnet-n1-q10-0,100,432.0,434.974,1,124.013,128.999,124.013,128.999,0.56,False,298.381,2026-06-18T17:37:48.495619+00:00

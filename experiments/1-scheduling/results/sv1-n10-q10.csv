@@ -1,0 +1,11 @@
+backend,pipeline,scheduler,n_pods_batch,n_nodes_or_atoms,n_shots,max_iter,pod_name,seed,pod_wall_s,batch_wall_s,n_iterations,total_qpu_wait_s,total_circuit_time_s,avg_qpu_wait_s,avg_circuit_time_s,approximation_ratio,converged,total_elapsed_s,timestamp
+sv1,gate,default,10,10,100,5,qaoa-exp-sv1-n10-q10-0,100,45.0,52.106,0,0,0,,,0.594,False,30.087,2026-06-18T04:50:27.769207+00:00
+sv1,gate,default,10,10,100,5,qaoa-exp-sv1-n10-q10-1,101,43.0,52.106,0,0,0,,,0.577333,False,28.584,2026-06-18T04:50:28.041171+00:00
+sv1,gate,default,10,10,100,5,qaoa-exp-sv1-n10-q10-2,102,45.0,52.106,0,0,0,,,0.592667,False,30.043,2026-06-18T04:50:28.315124+00:00
+sv1,gate,default,10,10,100,5,qaoa-exp-sv1-n10-q10-3,103,45.0,52.106,0,0,0,,,0.652667,False,29.568,2026-06-18T04:50:28.595186+00:00
+sv1,gate,default,10,10,100,5,qaoa-exp-sv1-n10-q10-4,104,45.0,52.106,0,0,0,,,0.637333,False,29.51,2026-06-18T04:50:28.866402+00:00
+sv1,gate,default,10,10,100,5,qaoa-exp-sv1-n10-q10-5,105,45.0,52.106,0,0,0,,,0.632667,False,28.773,2026-06-18T04:50:29.089917+00:00
+sv1,gate,default,10,10,100,5,qaoa-exp-sv1-n10-q10-6,106,44.0,52.106,0,0,0,,,0.630667,False,29.61,2026-06-18T04:50:29.224642+00:00
+sv1,gate,default,10,10,100,5,qaoa-exp-sv1-n10-q10-7,107,45.0,52.106,0,0,0,,,0.613333,False,29.353,2026-06-18T04:50:29.353348+00:00
+sv1,gate,default,10,10,100,5,qaoa-exp-sv1-n10-q10-8,108,43.0,52.106,0,0,0,,,0.690667,False,29.676,2026-06-18T04:50:29.481381+00:00
+sv1,gate,default,10,10,100,5,qaoa-exp-sv1-n10-q10-9,109,44.0,52.106,0,0,0,,,0.645333,False,29.107,2026-06-18T04:50:29.616749+00:00
