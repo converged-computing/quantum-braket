@@ -4,8 +4,12 @@ metadata:
   name: qaoa-pipeline
   labels:
     app: quantum-braket
+    # fluence.io/group: qaoa-pipeline
 spec:
   restartPolicy: Never
+
+  # schedulerName: fluence
+
   initContainers:
     - name: problem-generator
       image: ghcr.io/converged-computing/quantum-braket-problem-generator:latest
@@ -85,7 +89,7 @@ spec:
           memory: "512Mi"
         limits:
           cpu: "1000m"
-          memory: "1Gi"
+          memory: "4Gi"
 
   containers:
     - name: optimizer
@@ -128,7 +132,7 @@ spec:
           memory: "512Mi"
         limits:
           cpu: "2000m"
-          memory: "2Gi"
+          memory: "4Gi"
 
   volumes:
     - name: workspace

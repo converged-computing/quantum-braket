@@ -1,0 +1,6 @@
+backend,pipeline,scheduler,n_pods_batch,n_nodes_or_atoms,n_shots,max_iter,pod_name,seed,pod_wall_s,batch_wall_s,n_iterations,total_qpu_wait_s,total_circuit_time_s,avg_qpu_wait_s,avg_circuit_time_s,approximation_ratio,converged,total_elapsed_s,timestamp
+iqm_garnet,gate,default,5,10,100,5,qaoa-exp-iqm-garnet-n5-q10-0,100,390.0,425.289,1,47.001,51.891,47.001,51.891,0.586667,False,334.032,2026-06-18T17:44:55.066773+00:00
+iqm_garnet,gate,default,5,10,100,5,qaoa-exp-iqm-garnet-n5-q10-1,101,415.0,425.289,1,51.621,55.246,51.621,55.246,0.515333,False,353.569,2026-06-18T17:44:55.250437+00:00
+iqm_garnet,gate,default,5,10,100,5,qaoa-exp-iqm-garnet-n5-q10-2,102,391.0,425.289,1,77.503,81.167,77.503,81.167,0.56,False,303.31,2026-06-18T17:44:55.430326+00:00
+iqm_garnet,gate,default,5,10,100,5,qaoa-exp-iqm-garnet-n5-q10-3,103,419.0,425.289,1,81.043,85.393,81.043,85.393,0.566,False,327.947,2026-06-18T17:44:55.602115+00:00
+iqm_garnet,gate,default,5,10,100,5,qaoa-exp-iqm-garnet-n5-q10-4,104,418.0,425.289,1,105.187,110.034,105.187,110.034,0.58,False,303.965,2026-06-18T17:44:55.757410+00:00

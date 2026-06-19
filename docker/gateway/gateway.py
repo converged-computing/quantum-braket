@@ -145,6 +145,13 @@ def main():
     except Exception as e:
         print(f"[braket-gateway] ERROR submitting to Braket: {e}", file=sys.stderr)
         sys.exit(1)
+
+    if result is None:
+        print(f"[braket-gateway] ERROR: task {task.id} returned no result "
+              f"(state={task.state()}). Task may have been cancelled or failed.",
+              file=sys.stderr)
+        sys.exit(1)
+
     elapsed = t_result - t_submit
     qpu_queue_wait = t_result - t_queued
 

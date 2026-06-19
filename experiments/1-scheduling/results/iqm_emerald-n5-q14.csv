@@ -1,0 +1,6 @@
+backend,pipeline,scheduler,n_pods_batch,n_nodes_or_atoms,n_shots,max_iter,pod_name,seed,pod_wall_s,batch_wall_s,n_iterations,total_qpu_wait_s,total_circuit_time_s,avg_qpu_wait_s,avg_circuit_time_s,approximation_ratio,converged,total_elapsed_s,timestamp
+iqm_emerald,gate,default,5,14,100,5,qaoa-exp-iqm-emerald-n5-q14-0,100,381.0,476.031,1,18.39,22.828,18.39,22.828,0.61,False,353.526,2026-06-19T00:25:23.011275+00:00
+iqm_emerald,gate,default,5,14,100,5,qaoa-exp-iqm-emerald-n5-q14-1,101,469.0,476.031,1,75.007,81.711,75.007,81.711,0.57,False,383.561,2026-06-19T00:25:23.190163+00:00
+iqm_emerald,gate,default,5,14,100,5,qaoa-exp-iqm-emerald-n5-q14-2,102,441.0,476.031,1,70.543,75.366,70.543,75.366,0.550952,False,361.192,2026-06-19T00:25:23.365760+00:00
+iqm_emerald,gate,default,5,14,100,5,qaoa-exp-iqm-emerald-n5-q14-3,103,413.0,476.031,1,42.867,47.463,42.867,47.463,0.567143,False,361.712,2026-06-19T00:25:23.527450+00:00
+iqm_emerald,gate,default,5,14,100,5,qaoa-exp-iqm-emerald-n5-q14-4,104,443.0,476.031,1,45.603,49.328,45.603,49.328,0.571429,False,388.42,2026-06-19T00:25:23.666205+00:00

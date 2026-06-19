@@ -1,0 +1,2 @@
+backend,pipeline,scheduler,n_pods_batch,n_nodes_or_atoms,n_shots,max_iter,pod_name,seed,pod_wall_s,batch_wall_s,n_iterations,total_qpu_wait_s,total_circuit_time_s,avg_qpu_wait_s,avg_circuit_time_s,approximation_ratio,converged,total_elapsed_s,timestamp
+iqm_emerald,gate,default,1,10,100,5,qaoa-exp-iqm-emerald-n1-q10-0,100,365.0,371.208,1,54.169,59.492,54.169,59.492,0.561333,False,300.05,2026-06-18T18:59:21.754322+00:00

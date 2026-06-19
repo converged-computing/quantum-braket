@@ -1,0 +1,11 @@
+backend,pipeline,scheduler,n_pods_batch,n_nodes_or_atoms,n_shots,max_iter,pod_name,seed,pod_wall_s,batch_wall_s,n_iterations,total_qpu_wait_s,total_circuit_time_s,avg_qpu_wait_s,avg_circuit_time_s,approximation_ratio,converged,total_elapsed_s,timestamp
+iqm_emerald,gate,default,10,14,100,5,qaoa-exp-iqm-emerald-n10-q14-0,100,986.0,1053.195,1,253.025,257.222,253.025,257.222,0.570952,False,724.202,2026-06-19T00:42:58.182920+00:00
+iqm_emerald,gate,default,10,14,100,5,qaoa-exp-iqm-emerald-n10-q14-1,101,958.0,1053.195,1,258.957,263.085,258.957,263.085,0.517619,False,690.372,2026-06-19T00:42:58.372784+00:00
+iqm_emerald,gate,default,10,14,100,5,qaoa-exp-iqm-emerald-n10-q14-2,102,987.0,1053.195,1,284.448,288.912,284.448,288.912,0.532857,False,694.039,2026-06-19T00:42:58.518098+00:00
+iqm_emerald,gate,default,10,14,100,5,qaoa-exp-iqm-emerald-n10-q14-3,103,956.0,1053.195,1,228.028,232.255,228.028,232.255,0.57,False,719.937,2026-06-19T00:42:58.661971+00:00
+iqm_emerald,gate,default,10,14,100,5,qaoa-exp-iqm-emerald-n10-q14-4,104,929.0,1053.195,1,197.045,200.942,197.045,200.942,0.572381,False,724.011,2026-06-19T00:42:58.801746+00:00
+iqm_emerald,gate,default,10,14,100,5,qaoa-exp-iqm-emerald-n10-q14-5,105,1042.0,1053.195,1,312.76,317.542,312.76,317.542,0.507143,False,719.034,2026-06-19T00:42:58.952071+00:00
+iqm_emerald,gate,default,10,14,100,5,qaoa-exp-iqm-emerald-n10-q14-6,106,954.0,1053.195,1,233.359,236.605,233.359,236.605,0.586667,False,711.816,2026-06-19T00:42:59.102147+00:00
+iqm_emerald,gate,default,10,14,100,5,qaoa-exp-iqm-emerald-n10-q14-7,107,1016.0,1053.195,1,289.493,294.394,289.493,294.394,0.559048,False,717.125,2026-06-19T00:42:59.246791+00:00
+iqm_emerald,gate,default,10,14,100,5,qaoa-exp-iqm-emerald-n10-q14-8,108,1046.0,1053.195,1,315.973,321.324,315.973,321.324,0.605714,False,719.781,2026-06-19T00:42:59.390981+00:00
+iqm_emerald,gate,default,10,14,100,5,qaoa-exp-iqm-emerald-n10-q14-9,109,1012.0,1053.195,1,286.472,291.328,286.472,291.328,0.552857,False,716.079,2026-06-19T00:42:59.535595+00:00
