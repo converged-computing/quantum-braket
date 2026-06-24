@@ -1,0 +1,2 @@
+run_name,backend,scheduler,n_workers,n_nodes,n_shots,seed,batch_wall_s,leader_wall_s,qpu_queue_wait_s,leader_submit_to_result_s,total_worker_idle_s,avg_worker_idle_s,worker_node_seconds,n_workers_completed,leader_failed,cost_aggregated,workers_completed,timestamp,worker_0_idle_s,worker_1_idle_s
+gang-sv1-default-w2-q10,sv1,default,2,10,1000,42,33.368,21.0,1.891,3.286,25.162,12.581,25.162,2,False,,2,2026-06-23T17:55:32.326341+00:00,12.43,12.732

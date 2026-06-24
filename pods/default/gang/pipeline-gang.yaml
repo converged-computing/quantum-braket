@@ -1,0 +1,328 @@
+# Gang pipeline — DEFAULT (native Kubernetes gang scheduling, no Fluence)
+#
+# BASELINE condition. All 5 pods are gang-scheduled together by the default
+# scheduler via a native scheduling.k8s.io/v1alpha2 PodGroup (the in-tree
+# GangScheduling plugin admits them all-or-nothing). They all start at once.
+# The leader submits to the QPU; the 4 workers then idle, burning classical
+# node-time, while the QPU vendor queue drains. This is the two-queue problem.
+#
+# Differs from the Fluence condition ONLY in scheduler awareness: same gang
+# semantics, same 5 pods, same workload — but the default scheduler cannot gate
+# the classical workers on QPU queue position, so they waste resources.
+#
+# Because Fluence is not placing the quantum work here, the leader selects its
+# device explicitly via BRAKET_DEVICE. For a fair comparison set this to the
+# SAME backend the Fluence condition was allowed to choose (the orchestrator
+# does this per backend). The methods section notes the default backend is
+# fixed manually.
+#
+# Requires: kube-apiserver serving scheduling.k8s.io/v1alpha2 (GenericWorkload)
+# and the default kube-scheduler with GangScheduling=true.
+#
+# Deploy:
+#   kubectl apply -f pods/default/gang/pipeline-gang.yaml
+apiVersion: scheduling.k8s.io/v1alpha2
+kind: PodGroup
+metadata:
+  name: qaoa-gang-default
+spec:
+  schedulingPolicy:
+    gang:
+      # Leader + 4 workers must be schedulable together (all-or-nothing).
+      minCount: 5
+---
+# Leader — submits the QAOA circuit to the QPU.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: qaoa-gang-leader
+  labels:
+    app: quantum-braket-gang
+    role: leader
+spec:
+  # Default scheduler (native gang via PodGroup). No schedulerName => default.
+  schedulingGroup:
+    podGroupName: qaoa-gang-default
+  restartPolicy: Never
+  initContainers:
+    - name: problem-generator
+      image: ghcr.io/converged-computing/quantum-braket-problem-generator:latest
+      imagePullPolicy: Always
+      env:
+        - name: N_NODES
+          value: "10"
+        - name: K_REGULAR
+          value: "3"
+        - name: SEED
+          value: "42"
+        - name: WORKSPACE
+          value: /workspace
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      resources:
+        requests: { cpu: "100m", memory: "128Mi" }
+        limits:   { cpu: "500m", memory: "256Mi" }
+    - name: transpiler
+      image: ghcr.io/converged-computing/quantum-braket-transpiler:latest
+      imagePullPolicy: Always
+      env:
+        - name: P_LAYERS
+          value: "1"
+        - name: WORKSPACE
+          value: /workspace
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      resources:
+        requests: { cpu: "200m", memory: "256Mi" }
+        limits:   { cpu: "1000m", memory: "512Mi" }
+  containers:
+    - name: gang
+      image: ghcr.io/converged-computing/quantum-braket-gang:latest
+      imagePullPolicy: Always
+      env:
+        - name: GANG_ROLE
+          value: "leader"
+        - name: RUN_ID
+          value: "manual-run"
+        - name: WORKSPACE
+          value: /workspace
+        - name: N_SHOTS
+          value: "1000"
+        - name: N_WORKERS
+          value: "4"
+        - name: WORKER_TIMEOUT_S
+          value: "600"
+        # DEFAULT condition: leader picks its own device (Fluence is not placing
+        # it). Set to the same backend as the matched Fluence run for fairness.
+        - name: BRAKET_DEVICE
+          value: "arn:aws:braket:::device/quantum-simulator/amazon/sv1"
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom: { secretKeyRef: { name: aws-braket-credentials, key: AWS_ACCESS_KEY_ID } }
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom: { secretKeyRef: { name: aws-braket-credentials, key: AWS_SECRET_ACCESS_KEY } }
+        - name: AWS_DEFAULT_REGION
+          valueFrom: { secretKeyRef: { name: aws-braket-credentials, key: AWS_DEFAULT_REGION } }
+        # Region of the Braket DEVICE (where result buckets live), set per-run by
+        # the orchestrator from the device ARN. Both leader and workers use this
+        # so they agree on the result bucket even for cross-region devices.
+        - name: BRAKET_REGION
+          value: "us-east-1"
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      resources:
+        requests: { cpu: "500m", memory: "512Mi" }
+        limits:   { cpu: "2000m", memory: "4Gi" }
+  volumes:
+    - name: workspace
+      emptyDir: {}
+---
+# Worker 0 — classical (no QPU). In the DEFAULT condition it starts
+# immediately with the leader and idles until the leader writes the
+# leader-ready signal to S3. The idle time is the wasted classical resource.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: qaoa-gang-worker-0
+  labels:
+    app: quantum-braket-gang
+    role: worker
+spec:
+  schedulingGroup:
+    podGroupName: qaoa-gang-default
+  restartPolicy: Never
+  containers:
+    - name: gang
+      image: ghcr.io/converged-computing/quantum-braket-gang:latest
+      imagePullPolicy: Always
+      env:
+        - name: GANG_ROLE
+          value: "worker"
+        - name: RUN_ID
+          value: "manual-run"
+        - name: WORKER_INDEX
+          value: "0"
+        - name: N_WORKERS
+          value: "4"
+        - name: N_SHOTS
+          value: "1000"
+        - name: LEADER_TIMEOUT_S
+          value: "600"
+        # Workers need the device ARN to derive the result bucket's REGION
+        # (Braket buckets are per-region); without it a cross-region device
+        # (e.g. Rigetti us-west-1) leaves workers polling us-east-1. set_env
+        # fills this for every pod that has the entry.
+        - name: BRAKET_DEVICE
+          value: "arn:aws:braket:::device/quantum-simulator/amazon/sv1"
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom: { secretKeyRef: { name: aws-braket-credentials, key: AWS_ACCESS_KEY_ID } }
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom: { secretKeyRef: { name: aws-braket-credentials, key: AWS_SECRET_ACCESS_KEY } }
+        - name: AWS_DEFAULT_REGION
+          valueFrom: { secretKeyRef: { name: aws-braket-credentials, key: AWS_DEFAULT_REGION } }
+        # Region of the Braket DEVICE (where result buckets live), set per-run by
+        # the orchestrator from the device ARN. Both leader and workers use this
+        # so they agree on the result bucket even for cross-region devices.
+        - name: BRAKET_REGION
+          value: "us-east-1"
+      resources:
+        requests: { cpu: "500m", memory: "512Mi" }
+        limits:   { cpu: "1000m", memory: "2Gi" }
+---
+# Worker 1 — classical (no QPU). In the DEFAULT condition it starts
+# immediately with the leader and idles until the leader writes the
+# leader-ready signal to S3. The idle time is the wasted classical resource.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: qaoa-gang-worker-1
+  labels:
+    app: quantum-braket-gang
+    role: worker
+spec:
+  schedulingGroup:
+    podGroupName: qaoa-gang-default
+  restartPolicy: Never
+  containers:
+    - name: gang
+      image: ghcr.io/converged-computing/quantum-braket-gang:latest
+      imagePullPolicy: Always
+      env:
+        - name: GANG_ROLE
+          value: "worker"
+        - name: RUN_ID
+          value: "manual-run"
+        - name: WORKER_INDEX
+          value: "1"
+        - name: N_WORKERS
+          value: "4"
+        - name: N_SHOTS
+          value: "1000"
+        - name: LEADER_TIMEOUT_S
+          value: "600"
+        # Workers need the device ARN to derive the result bucket's REGION
+        # (Braket buckets are per-region); without it a cross-region device
+        # (e.g. Rigetti us-west-1) leaves workers polling us-east-1. set_env
+        # fills this for every pod that has the entry.
+        - name: BRAKET_DEVICE
+          value: "arn:aws:braket:::device/quantum-simulator/amazon/sv1"
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom: { secretKeyRef: { name: aws-braket-credentials, key: AWS_ACCESS_KEY_ID } }
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom: { secretKeyRef: { name: aws-braket-credentials, key: AWS_SECRET_ACCESS_KEY } }
+        - name: AWS_DEFAULT_REGION
+          valueFrom: { secretKeyRef: { name: aws-braket-credentials, key: AWS_DEFAULT_REGION } }
+        # Region of the Braket DEVICE (where result buckets live), set per-run by
+        # the orchestrator from the device ARN. Both leader and workers use this
+        # so they agree on the result bucket even for cross-region devices.
+        - name: BRAKET_REGION
+          value: "us-east-1"
+      resources:
+        requests: { cpu: "500m", memory: "512Mi" }
+        limits:   { cpu: "1000m", memory: "2Gi" }
+---
+# Worker 2 — classical (no QPU). In the DEFAULT condition it starts
+# immediately with the leader and idles until the leader writes the
+# leader-ready signal to S3. The idle time is the wasted classical resource.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: qaoa-gang-worker-2
+  labels:
+    app: quantum-braket-gang
+    role: worker
+spec:
+  schedulingGroup:
+    podGroupName: qaoa-gang-default
+  restartPolicy: Never
+  containers:
+    - name: gang
+      image: ghcr.io/converged-computing/quantum-braket-gang:latest
+      imagePullPolicy: Always
+      env:
+        - name: GANG_ROLE
+          value: "worker"
+        - name: RUN_ID
+          value: "manual-run"
+        - name: WORKER_INDEX
+          value: "2"
+        - name: N_WORKERS
+          value: "4"
+        - name: N_SHOTS
+          value: "1000"
+        - name: LEADER_TIMEOUT_S
+          value: "600"
+        # Workers need the device ARN to derive the result bucket's REGION
+        # (Braket buckets are per-region); without it a cross-region device
+        # (e.g. Rigetti us-west-1) leaves workers polling us-east-1. set_env
+        # fills this for every pod that has the entry.
+        - name: BRAKET_DEVICE
+          value: "arn:aws:braket:::device/quantum-simulator/amazon/sv1"
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom: { secretKeyRef: { name: aws-braket-credentials, key: AWS_ACCESS_KEY_ID } }
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom: { secretKeyRef: { name: aws-braket-credentials, key: AWS_SECRET_ACCESS_KEY } }
+        - name: AWS_DEFAULT_REGION
+          valueFrom: { secretKeyRef: { name: aws-braket-credentials, key: AWS_DEFAULT_REGION } }
+        # Region of the Braket DEVICE (where result buckets live), set per-run by
+        # the orchestrator from the device ARN. Both leader and workers use this
+        # so they agree on the result bucket even for cross-region devices.
+        - name: BRAKET_REGION
+          value: "us-east-1"
+      resources:
+        requests: { cpu: "500m", memory: "512Mi" }
+        limits:   { cpu: "1000m", memory: "2Gi" }
+---
+# Worker 3 — classical (no QPU). In the DEFAULT condition it starts
+# immediately with the leader and idles until the leader writes the
+# leader-ready signal to S3. The idle time is the wasted classical resource.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: qaoa-gang-worker-3
+  labels:
+    app: quantum-braket-gang
+    role: worker
+spec:
+  schedulingGroup:
+    podGroupName: qaoa-gang-default
+  restartPolicy: Never
+  containers:
+    - name: gang
+      image: ghcr.io/converged-computing/quantum-braket-gang:latest
+      imagePullPolicy: Always
+      env:
+        - name: GANG_ROLE
+          value: "worker"
+        - name: RUN_ID
+          value: "manual-run"
+        - name: WORKER_INDEX
+          value: "3"
+        - name: N_WORKERS
+          value: "4"
+        - name: N_SHOTS
+          value: "1000"
+        - name: LEADER_TIMEOUT_S
+          value: "600"
+        # Workers need the device ARN to derive the result bucket's REGION
+        # (Braket buckets are per-region); without it a cross-region device
+        # (e.g. Rigetti us-west-1) leaves workers polling us-east-1. set_env
+        # fills this for every pod that has the entry.
+        - name: BRAKET_DEVICE
+          value: "arn:aws:braket:::device/quantum-simulator/amazon/sv1"
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom: { secretKeyRef: { name: aws-braket-credentials, key: AWS_ACCESS_KEY_ID } }
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom: { secretKeyRef: { name: aws-braket-credentials, key: AWS_SECRET_ACCESS_KEY } }
+        - name: AWS_DEFAULT_REGION
+          valueFrom: { secretKeyRef: { name: aws-braket-credentials, key: AWS_DEFAULT_REGION } }
+        # Region of the Braket DEVICE (where result buckets live), set per-run by
+        # the orchestrator from the device ARN. Both leader and workers use this
+        # so they agree on the result bucket even for cross-region devices.
+        - name: BRAKET_REGION
+          value: "us-east-1"
+      resources:
+        requests: { cpu: "500m", memory: "512Mi" }
+        limits:   { cpu: "1000m", memory: "2Gi" }
