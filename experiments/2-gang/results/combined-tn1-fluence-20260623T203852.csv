@@ -1,0 +1,2 @@
+run_name,backend,scheduler,n_workers,n_nodes,n_shots,seed,batch_wall_s,leader_wall_s,qpu_queue_wait_s,leader_submit_to_result_s,total_worker_idle_s,avg_worker_idle_s,worker_node_seconds,n_workers_completed,leader_failed,cost_aggregated,workers_completed,timestamp,worker_0_idle_s,worker_1_idle_s,worker_2_idle_s,worker_3_idle_s,worker_4_idle_s,worker_5_idle_s,worker_6_idle_s,worker_7_idle_s
+gang-tn1-fluence-w8-q10,tn1,fluence,8,10,1000,42,69.517,37.0,2.034,3.918,35.156,4.395,35.156,8,False,,8,2026-06-23T20:38:52.042089+00:00,2.037,2.36,10.546,3.097,4.652,4.257,4.595,3.612

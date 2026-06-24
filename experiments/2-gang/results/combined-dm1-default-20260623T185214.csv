@@ -1,0 +1,2 @@
+run_name,backend,scheduler,n_workers,n_nodes,n_shots,seed,batch_wall_s,leader_wall_s,qpu_queue_wait_s,leader_submit_to_result_s,total_worker_idle_s,avg_worker_idle_s,worker_node_seconds,n_workers_completed,leader_failed,cost_aggregated,workers_completed,timestamp,worker_0_idle_s,worker_1_idle_s
+gang-dm1-default-w2-q10,dm1,default,2,10,1000,42,23.33,17.0,1.85,4.015,25.031,12.516,25.031,2,False,,2,2026-06-23T18:52:14.000522+00:00,12.448,12.584

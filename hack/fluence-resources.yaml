@@ -96,49 +96,6 @@ data:
               - type: qubit
                 count: 20
 
-      - type: qdevice
-        name: aqt_ibex
-        attributes: aqt-ibex
-        with:
-          - type: qpu
-            count: 1
-            with:
-              - type: qubit
-                count: 20
-
-      - type: qdevice
-        name: ionq_forte
-        attributes: ionq-forte
-        with:
-          - type: qpu
-            count: 1
-            with:
-              - type: qubit
-                count: 36
-
-      # ── AHS (Analog Hamiltonian Simulation) ──────────────────────────
-      # Incompatible with gate circuits. Different qrmi_type ensures
-      # the gateway uses the AHS SDK path, not the circuit path.
-
-      - type: qdevice
-        name: ahs_local
-        attributes: ahs-local
-        with:
-          - type: qpu
-            count: 8
-            with:
-              - type: qubit
-                count: 256
-
-      - type: qdevice
-        name: aquila
-        attributes: ahs-aquila
-        with:
-          - type: qpu
-            count: 1
-            with:
-              - type: qubit
-                count: 256
 
     attributes:
 
@@ -196,41 +153,3 @@ data:
         connectivity: star
         price_per_task: "0.30"
         price_per_shot: "0.00160"
-
-      aqt-ibex:
-        vendor: aqt
-        qrmi_type: braket-gate
-        arn: "arn:aws:braket:eu-north-1::device/qpu/aqt/IBEX-Q1"
-        region: eu-north-1
-        connectivity: all-to-all
-        price_per_task: "0.30"
-        price_per_shot: "0.02350"
-
-      ionq-forte:
-        vendor: ionq
-        qrmi_type: braket-gate
-        arn: "arn:aws:braket:us-east-1::device/qpu/ionq/Forte-Enterprise-1"
-        region: us-east-1
-        connectivity: all-to-all
-        price_per_task: "0.30"
-        price_per_shot: "0.08000"
-
-      # ── AHS ──────────────────────────────────────────────────────────
-
-      ahs-local:
-        vendor: amazon
-        qrmi_type: braket-ahs
-        arn: "local"
-        region: local
-        connectivity: programmable-2d
-        price_per_task: "0.0"
-        price_per_shot: "0.0"
-
-      ahs-aquila:
-        vendor: quera
-        qrmi_type: braket-ahs
-        arn: "arn:aws:braket:us-east-1::device/qpu/quera/Aquila"
-        region: us-east-1
-        connectivity: programmable-2d
-        price_per_task: "0.30"
-        price_per_shot: "0.01000"
