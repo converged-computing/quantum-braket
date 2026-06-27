@@ -32,6 +32,7 @@ jobs:
           - ahs-problem-generator
           - mis-postprocessor
           - gang
+          - gang-selection
 
     steps:
       - uses: actions/checkout@v4

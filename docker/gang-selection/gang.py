@@ -2,7 +2,8 @@
 """
 gang.py — Unified gang workflow container for Fluence quantum experiments.
 
-Role is determined by GANG_ROLE environment variable:
+Role is determined by FLUENCE_ROLE (injected by the Fluence webhook from
+the fluence.flux-framework.org/role annotation), falling back to GANG_ROLE:
   leader  — submits QAOA circuit, writes S3 leader-ready signal, aggregates
   worker  — polls S3 for leader-ready, fetches result, processes shot partition
 
@@ -22,12 +23,12 @@ Leader-specific:
                      backend NAME arrives separately as FLUXION_BACKEND
   N_SHOTS            shots per task (default: 1000)
   N_WORKERS          number of worker pods to wait for (default: 4)
-  WORKER_TIMEOUT_S   seconds to wait for all workers (default: 600)
+  (no timeout)       leader/workers wait indefinitely — a QPU queue can take
+                     30-60+ min; we never abort a healthy gang on a clock.
 
 Worker-specific:
   WORKER_INDEX       this worker's index 0-based (default: 0)
   N_WORKERS          total number of workers (default: 4)
-  LEADER_TIMEOUT_S   seconds to wait for leader-ready signal (default: 600)
   FLUENCE_QUANTUM_JOB_ID  vendor-neutral job id injected by the Fluence sidecar
                      via the quantum-job-id annotation / downward API
                      (optional — discovered from S3 if not set)
@@ -40,6 +41,8 @@ S3 coordination paths (derived from task_id):
 
 import json
 import os
+import math
+import random
 import sys
 import time
 from datetime import datetime, timezone
@@ -112,6 +115,62 @@ def build_circuit(n_qubits, edges, gammas, betas):
 
 # ── Leader ─────────────────────────────────────────────────────────────────────
 
+def _bootstrap_problem_if_missing(workspace, lg):
+    """Generate /workspace/problem.json and params.json in-process if absent, so
+    this image is self-contained (no problem-generator / transpiler init
+    containers, no shared workspace volume required). Mirrors
+    docker/problem-generator/generate.py and the param init in
+    docker/transpiler/transpile.py. No-op when the files already exist."""
+    os.makedirs(workspace, exist_ok=True)
+    prob_path = os.path.join(workspace, "problem.json")
+    params_path = os.path.join(workspace, "params.json")
+    if os.path.exists(prob_path) and os.path.exists(params_path):
+        return
+
+    n_nodes = int(os.environ.get("N_NODES", 10))
+    k = int(os.environ.get("K_REGULAR", 3))
+    seed = int(os.environ.get("SEED", 42))
+    p = int(os.environ.get("P_LAYERS", 1))
+    lg(f"bootstrap: generating problem in-process (n_nodes={n_nodes} k={k} "
+       f"seed={seed} p={p})")
+
+    if n_nodes * k % 2 != 0:
+        raise ValueError(f"n*k must be even (n={n_nodes}, k={k})")
+    if k >= n_nodes:
+        raise ValueError(f"k must be < n (k={k}, n={n_nodes})")
+    rng = random.Random(seed)
+    edges = None
+    for _ in range(100):
+        stubs = []
+        for node in range(n_nodes):
+            stubs.extend([node] * k)
+        rng.shuffle(stubs)
+        es, valid = set(), True
+        for i in range(0, len(stubs), 2):
+            u, v = stubs[i], stubs[i + 1]
+            if u == v or (min(u, v), max(u, v)) in es:
+                valid = False
+                break
+            es.add((min(u, v), max(u, v)))
+        if valid:
+            edges = [(u, v, 1.0) for u, v in sorted(es)]
+            break
+    if edges is None:
+        raise RuntimeError(f"could not build a {k}-regular graph on {n_nodes} "
+                           f"nodes after 100 attempts")
+    with open(prob_path, "w") as f:
+        json.dump({"n_nodes": n_nodes, "edges": edges, "seed": seed, "k": k,
+                   "n_qubits": n_nodes}, f, indent=2)
+
+    prng = random.Random(seed)
+    gammas = [prng.uniform(0.1, math.pi - 0.1) for _ in range(p)]
+    betas = [prng.uniform(0.1, math.pi / 2 - 0.1) for _ in range(p)]
+    with open(params_path, "w") as f:
+        json.dump({"gammas": gammas, "betas": betas, "p": p}, f, indent=2)
+    lg(f"bootstrap: wrote problem.json ({len(edges)} edges, {n_nodes} qubits) "
+       f"+ params.json (p={p})")
+
+
 def run_leader():
     workspace      = os.environ.get("WORKSPACE", "/workspace")
     # Fluence injects the matched backend as FLUXION_BACKEND (the backend NAME,
@@ -124,7 +183,6 @@ def run_leader():
     placed_by_fluence = bool(os.environ.get("FLUXION_ARN"))
     n_shots        = int(os.environ.get("N_SHOTS", 1000))
     n_workers      = int(os.environ.get("N_WORKERS", 4))
-    worker_timeout = int(os.environ.get("WORKER_TIMEOUT_S", 600))
 
     t_start = time.time()
     lg = lambda msg: log("leader", msg)
@@ -132,7 +190,12 @@ def run_leader():
     lg(f"device={device_arn} n_shots={n_shots} n_workers={n_workers}")
     lg(f"TIMING leader_start_ts={t_start:.6f}")
 
-    # Load problem and params from initContainers
+    # Self-contained: if the workspace files are absent (no problem-generator /
+    # transpiler init containers), generate them in-process. No-op when they
+    # already exist, so this image also works behind the original init pipeline.
+    _bootstrap_problem_if_missing(workspace, lg)
+
+    # Load problem and params (from init containers, or the bootstrap above)
     with open(f"{workspace}/problem.json") as f:
         problem = json.load(f)
     with open(f"{workspace}/params.json") as f:
@@ -150,7 +213,22 @@ def run_leader():
     t_submit = time.time()
     lg(f"TIMING submit_ts={t_submit:.6f}")
     device = AwsDevice(device_arn)
-    task   = device.run(circ, shots=n_shots)
+    # Tag the task with our pod UID so the Fluence sidecar can find it
+    # (sidecar searches search_quantum_tasks and matches the `fluence-pod-uid`
+    # tag client-side, then ungates the workers when this task reaches the front
+    # of the queue). We set the tag EXPLICITLY rather than relying solely on the
+    # PYTHONPATH interceptor monkeypatch — the SDK accepts a `tags` dict on run(),
+    # and an explicit tag is robust to interceptor import-ordering issues. If the
+    # interceptor also fires it sets the same key to the same value (harmless).
+    pod_uid = os.environ.get("FLUENCE_POD_UID", "")
+    run_kwargs = {"shots": n_shots}
+    if pod_uid:
+        run_kwargs["tags"] = {"fluence-pod-uid": pod_uid}
+        lg(f"tagging task fluence-pod-uid={pod_uid}")
+    else:
+        lg("WARNING: FLUENCE_POD_UID unset — task will be untagged; the sidecar "
+           "cannot find it and workers will not ungate")
+    task   = device.run(circ, **run_kwargs)
     t_queued = time.time()
     lg(f"TIMING queued_ts={t_queued:.6f}")
     lg(f"Task ARN: {task.id}")
@@ -195,10 +273,14 @@ def run_leader():
     lg(f"TIMING leader_ready_ts={time.time():.6f}")
 
     # Wait for worker partial results
-    lg(f"Waiting for {n_workers} workers (timeout={worker_timeout}s)...")
-    deadline = time.time() + worker_timeout
+    lg(f"Waiting for {n_workers} workers (no timeout)...")
     received = set()
-    while len(received) < n_workers and time.time() < deadline:
+    wait_start = time.time()
+    next_heartbeat = wait_start + 60
+    # No deadline: wait for every worker to finish. Workers run after ungate, so
+    # this is normally quick, but processing time varies — we never abort a
+    # healthy gang on a clock.
+    while len(received) < n_workers:
         for i in range(n_workers):
             if i in received:
                 continue
@@ -209,6 +291,11 @@ def run_leader():
             except Exception:
                 pass
         if len(received) < n_workers:
+            if time.time() >= next_heartbeat:
+                waited = int(time.time() - wait_start)
+                lg(f"  still waiting for workers "
+                   f"({len(received)}/{n_workers} done, {waited // 60}m{waited % 60}s elapsed)")
+                next_heartbeat += 60
             time.sleep(5)
 
     t_workers_done = time.time()
@@ -265,7 +352,6 @@ def run_worker():
     task_arn       = os.environ.get("FLUENCE_QUANTUM_JOB_ID", "")
     worker_index   = int(os.environ.get("WORKER_INDEX", 0))
     n_workers      = int(os.environ.get("N_WORKERS", 4))
-    leader_timeout = int(os.environ.get("LEADER_TIMEOUT_S", 600))
 
     t_start = time.time()
     lg = lambda msg: log(f"worker-{worker_index}", msg)
@@ -292,14 +378,17 @@ def run_worker():
     # the key is scoped to RUN_ID, the worker can only ever see THIS run's
     # leader — never a stale object from a previous run (which previously caused
     # workers to "complete" instantly and report zero idle time).
-    lg(f"Waiting for leader-ready (timeout={leader_timeout}s)...")
+    lg(f"Waiting for leader-ready (no timeout — QPU queue can take 30-60+ min)...")
     lg(f"  key=s3://{s3_bucket}/{key_leader_ready(None)}")
-    deadline = time.time() + leader_timeout
     leader_info = None
     wait_start = time.time()
     next_heartbeat = wait_start + 60
 
-    while time.time() < deadline:
+    # No deadline: the leader's quantum task may sit in the vendor queue for a
+    # long time, and a worker must wait for it however long it takes. We poll
+    # until leader-ready appears, logging a heartbeat so a long (healthy) wait is
+    # not mistaken for a hang.
+    while True:
         try:
             obj = s3.get_object(Bucket=s3_bucket, Key=key_leader_ready(None))
             leader_info = json.loads(obj["Body"].read())
@@ -309,21 +398,11 @@ def run_worker():
         except Exception as e:
             if "NoSuchKey" not in str(e) and "Not Found" not in str(e):
                 lg(f"  poll error: {e}")
-        # Heartbeat: on a queued QPU the leader can legitimately be in the vendor
-        # queue for a long time. Log progress so a long (correct) wait is not
-        # mistaken for a hang.
         if time.time() >= next_heartbeat:
             waited = int(time.time() - wait_start)
-            lg(f"  still waiting for leader-ready ({waited}s elapsed, "
-               f"{int(deadline - time.time())}s remaining)")
+            lg(f"  still waiting for leader-ready ({waited // 60}m{waited % 60}s elapsed)")
             next_heartbeat += 60
         time.sleep(5)
-
-    if leader_info is None:
-        lg(f"ERROR: leader-ready not found within timeout ({leader_timeout}s) — "
-           f"the leader may have failed, or the QPU queue exceeded the timeout; "
-           f"raise LEADER_TIMEOUT_S if the queue wait is expected to be longer")
-        sys.exit(1)
 
     t_ready = time.time()
     task_arn = leader_info["task_arn"]
@@ -388,42 +467,22 @@ def run_worker():
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    # Role is DISCOVERED from the environment, so one identical container image
-    # runs as either leader or worker. Precedence (works with BOTH old and new
-    # experiments):
-    #   1. FLUENCE_ROLE  — injected by the Fluence webhook from the
-    #      fluence.flux-framework.org/role annotation (new single-spec gangs).
-    #   2. GANG_ROLE     — set explicitly in the manifest (older experiments,
-    #      and the default-scheduler baseline arm that bypasses the webhook).
-    #   3. "worker"      — last-resort default.
-    # FLUENCE_ROLE wins when both are present, so Fluence's decision is
-    # authoritative.
     fluence_role = os.environ.get("FLUENCE_ROLE")
     gang_role = os.environ.get("GANG_ROLE")
     role = (fluence_role or gang_role or "worker").lower()
-
     source = ("FLUENCE_ROLE" if fluence_role else
-              "GANG_ROLE" if gang_role else
-              "default(worker)")
-    print(f"[gang] role={role} (from {source}; "
+              "GANG_ROLE" if gang_role else "default(worker)")
+    print(f"[gang-selection] role={role} (from {source}; "
           f"FLUENCE_ROLE={fluence_role!r} GANG_ROLE={gang_role!r})", flush=True)
-
-    # Silent-failure guard: if NEITHER signal is set we default to worker, which
-    # makes a would-be leader hang forever waiting for a leader-ready signal that
-    # nobody writes. Warn loudly so this misconfiguration is obvious in the logs
-    # (the usual cause: a Fluence-role manifest running against a webhook build
-    # that does not yet inject FLUENCE_ROLE — rebuild/redeploy Fluence).
     if not fluence_role and not gang_role:
-        print("[gang] WARNING: no role signal (FLUENCE_ROLE/GANG_ROLE both unset) "
-              "— defaulting to worker. If this pod was meant to be the leader, the "
-              "Fluence webhook is not injecting FLUENCE_ROLE (rebuild/redeploy "
-              "Fluence) or the manifest is missing GANG_ROLE.", flush=True)
-
+        print("[gang-selection] WARNING: no role signal (FLUENCE_ROLE/GANG_ROLE "
+              "both unset) — defaulting to worker. A would-be leader will hang; "
+              "rebuild/redeploy Fluence (FLUENCE_ROLE injection) or set GANG_ROLE.",
+              flush=True)
     if role == "leader":
         run_leader()
     elif role == "worker":
         run_worker()
     else:
-        print(f"ERROR: role must be 'leader' or 'worker' (from FLUENCE_ROLE or "
-              f"GANG_ROLE), got '{role}'")
+        print(f"ERROR: role must be 'leader' or 'worker' (FLUENCE_ROLE/GANG_ROLE), got '{role}'")
         sys.exit(1)
