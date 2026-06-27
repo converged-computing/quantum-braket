@@ -1,0 +1,62 @@
+# cost-attributes.yaml
+#
+# Static backend attributes consumed by `kubectl fluence` for cost selection.
+# This is the PRIMARY cost source: the cluster resource graph need not carry
+# pricing. Cost is given as COMPONENTS; the plugin computes the per-request
+# cost from the job's shot count:
+#
+#   QPU:        cost_usd = cost_per_task + shots * cost_per_shot
+#   simulator:  cost_per_minute (duration-dependent; treated as ~free vs QPUs)
+#
+# IMPORTANT: prices below are placeholders in the right ballpark. VERIFY against
+# the current AWS Braket pricing page before publishing results. Braket has no
+# per-device price API, so this table is authoritative for the experiment.
+#
+# Backend NAMES must match the device names in the cluster's fluence-resources
+# ConfigMap exactly, or the plugin's intersection will drop them.
+version: 1
+backends:
+  - name: sv1
+    provider: braket
+    device_arn: arn:aws:braket:::device/quantum-simulator/amazon/sv1
+    region: us-east-1
+    cost_per_minute: 0.075
+    qubits: 34
+
+  - name: dm1
+    provider: braket
+    device_arn: arn:aws:braket:::device/quantum-simulator/amazon/dm1
+    region: us-east-1
+    cost_per_minute: 0.075
+    qubits: 17
+
+  - name: tn1
+    provider: braket
+    device_arn: arn:aws:braket:::device/quantum-simulator/amazon/tn1
+    region: us-east-1
+    cost_per_minute: 0.275
+    qubits: 50
+
+  - name: rigetti_cepheus
+    provider: braket
+    device_arn: arn:aws:braket:us-west-1::device/qpu/rigetti/Cepheus-1-108Q
+    region: us-west-1
+    cost_per_task: 0.30
+    cost_per_shot: 0.00090
+    qubits: 108
+
+  - name: iqm_garnet
+    provider: braket
+    device_arn: arn:aws:braket:eu-north-1::device/qpu/iqm/Garnet
+    region: eu-north-1
+    cost_per_task: 0.30
+    cost_per_shot: 0.00145
+    qubits: 20
+
+  - name: iqm_emerald
+    provider: braket
+    device_arn: arn:aws:braket:eu-north-1::device/qpu/iqm/Emerald
+    region: eu-north-1
+    cost_per_task: 0.30
+    cost_per_shot: 0.00145
+    qubits: 54

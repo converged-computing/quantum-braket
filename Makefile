@@ -12,6 +12,7 @@ build:
 	docker build -t $(REGISTRY)/quantum-braket-ahs-gateway:$(TAG)       docker/ahs-gateway/
 	docker build -t $(REGISTRY)/quantum-braket-mis-postprocessor:$(TAG) docker/mis-postprocessor/
 	docker build -t $(REGISTRY)/quantum-braket-gang:$(TAG)              docker/gang/
+	docker build -t $(REGISTRY)/quantum-braket-gang-selection:$(TAG)              docker/gang-selection/
 
 push: build
 	docker push $(REGISTRY)/quantum-braket-problem-generator:$(TAG)
@@ -22,6 +23,7 @@ push: build
 	docker push $(REGISTRY)/quantum-braket-ahs-gateway:$(TAG)
 	docker push $(REGISTRY)/quantum-braket-mis-postprocessor:$(TAG)
 	docker push $(REGISTRY)/quantum-braket-gang:$(TAG)
+	docker push $(REGISTRY)/quantum-braket-gang-selection:$(TAG)
 
 load:
 	kind load docker-image $(REGISTRY)/quantum-braket-problem-generator:$(TAG)
@@ -32,5 +34,6 @@ load:
 	kind load docker-image $(REGISTRY)/quantum-braket-ahs-gateway:$(TAG)
 	kind load docker-image $(REGISTRY)/quantum-braket-mis-postprocessor:$(TAG)
 	kind load docker-image $(REGISTRY)/quantum-braket-gang:$(TAG)
+	kind load docker-image $(REGISTRY)/quantum-braket-gang-selection:$(TAG)
 
 all: push load

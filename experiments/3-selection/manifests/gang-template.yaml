@@ -1,0 +1,82 @@
+# manifests/gang-template.yaml
+#
+# A hybrid quantum gang: one leader + N workers, expressed as a SINGLE pod spec.
+# Pods are identical except for the fluence.flux-framework.org/role annotation;
+# role is DISCOVERED at runtime via $FLUENCE_ROLE (injected by Fluence from that
+# annotation) — gang.py reads it. One image, one spec, declared asymmetry.
+#
+# The LEADER additionally runs two init containers (problem-generator ->
+# problem.json, transpiler -> transpiled circuit) that populate the shared
+# /workspace volume the leader's gang container reads. Workers don't generate a
+# problem (they fetch results from S3), so the orchestrator attaches the init
+# containers to the leader only. The workspace volume itself is harmless on
+# workers (an empty dir they ignore), so it stays in the base template.
+#
+# Templated tokens (replaced by the orchestrator):
+#   __RUN_NAME__   group name        __POD_NAME__  per-pod name (leader/worker-i)
+#   __ROLE__       leader|worker      __RUN_ID__   run id / S3 prefix
+#   __N_SHOTS__    shots              __N_WORKERS__ worker count (leader expected-workers)
+#   (select-* block) selection annotations on the leader (empty for baseline)
+#   __SCHEDULER__  schedulerName (fluence)
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: __POD_NAME__
+  labels:
+    app: quantum-gang
+    fluence.flux-framework.org/group: __RUN_NAME__
+  annotations:
+    fluence.flux-framework.org/role: __ROLE__
+    fluence.flux-framework.org/require-qrmi_type: braket-gate
+__SELECT_BLOCK__
+spec:
+  schedulerName: __SCHEDULER__
+  restartPolicy: Never
+  containers:
+    - name: gang
+      image: ghcr.io/converged-computing/quantum-braket-gang-selection:latest
+      imagePullPolicy: Always
+      # Identical for leader and workers; gang.py reads $FLUENCE_ROLE (injected by
+      # Fluence from the role annotation) to choose run_leader()/run_worker().
+      env:
+        - name: RUN_ID
+          value: "__RUN_ID__"
+        - name: WORKSPACE
+          value: /workspace
+        - name: N_SHOTS
+          value: "__N_SHOTS__"
+        - name: N_WORKERS
+          value: "__N_WORKERS__"
+        - name: WORKER_TIMEOUT_S
+          value: "600"
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: aws-braket-credentials
+              key: AWS_ACCESS_KEY_ID
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: aws-braket-credentials
+              key: AWS_SECRET_ACCESS_KEY
+        - name: AWS_DEFAULT_REGION
+          valueFrom:
+            secretKeyRef:
+              name: aws-braket-credentials
+              key: AWS_DEFAULT_REGION
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "512Mi"
+          fluxion.flux-framework.org/qpu: "1"
+        limits:
+          cpu: "2000m"
+          memory: "4Gi"
+          fluxion.flux-framework.org/qpu: "1"
+  volumes:
+    - name: workspace
+      emptyDir: {}

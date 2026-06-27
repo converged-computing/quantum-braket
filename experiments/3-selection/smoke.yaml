@@ -1,0 +1,72 @@
+# role-smoke.yaml — minimal check that the Fluence role annotation works end to
+# end, with NO quantum work and NO cost. Two pods in one group:
+#   leader (role: leader)  -> Fluence injects the sidecar + FLUENCE_ROLE=leader
+#   worker (role: worker)  -> Fluence gates it (quantum.braket/ready) + FLUENCE_ROLE=worker
+#
+# We override the container command to just sleep and print env, so nothing is
+# submitted to a backend. This isolates the webhook behavior (role -> gating,
+# role -> $FLUENCE_ROLE injection) from the application.
+#
+# What to verify after `kubectl apply -f role-smoke.yaml`:
+#   1. leader has FLUENCE_ROLE=leader:
+#        kubectl exec role-smoke-leader -c gang -- printenv FLUENCE_ROLE   # -> leader
+#   2. leader has the sidecar injected:
+#        kubectl get pod role-smoke-leader -o jsonpath='{.spec.containers[*].name}'  # includes fluence-sidecar
+#   3. worker is GATED (so it won't be running yet):
+#        kubectl get pod role-smoke-worker -o jsonpath='{.spec.schedulingGates}'     # quantum.braket/ready
+#   4. worker also carries the role env (visible in spec even while gated):
+#        kubectl get pod role-smoke-worker -o jsonpath='{range .spec.containers[*]}{.name}{": "}{range .env[?(@.name=="FLUENCE_ROLE")]}{.valueFrom.fieldRef.fieldPath}{end}{"\n"}{end}'
+#
+# Cleanup:  kubectl delete -f role-smoke.yaml
+#
+# NOTE: both pods request the QPU resource (fluxion.flux-framework.org/qpu) so
+# Fluence's quantum handler engages — that request is what triggers the
+# role/sidecar/gating path. No task is ever submitted because the command is a
+# sleep, so this costs nothing.
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: role-smoke-leader
+  labels:
+    app: role-smoke
+    fluence.flux-framework.org/group: role-smoke
+  annotations:
+    fluence.flux-framework.org/role: leader
+    fluence.flux-framework.org/expected-workers: "1"
+    fluence.flux-framework.org/require-qrmi_type: braket-gate
+spec:
+  schedulerName: fluence
+  restartPolicy: Never
+  containers:
+    - name: gang
+      image: busybox:1.36
+      command: ["sh", "-c", "echo FLUENCE_ROLE=$FLUENCE_ROLE; sleep 600"]
+      resources:
+        requests:
+          fluxion.flux-framework.org/qpu: "1"
+        limits:
+          fluxion.flux-framework.org/qpu: "1"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: role-smoke-worker
+  labels:
+    app: role-smoke
+    fluence.flux-framework.org/group: role-smoke
+  annotations:
+    fluence.flux-framework.org/role: worker
+    fluence.flux-framework.org/require-qrmi_type: braket-gate
+spec:
+  schedulerName: fluence
+  restartPolicy: Never
+  containers:
+    - name: gang
+      image: busybox:1.36
+      command: ["sh", "-c", "echo FLUENCE_ROLE=$FLUENCE_ROLE; sleep 600"]
+      resources:
+        requests:
+          fluxion.flux-framework.org/qpu: "1"
+        limits:
+          fluxion.flux-framework.org/qpu: "1"
