@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Plot worker-idle results for experiment 2 (gang scheduling: fluence vs default).
+Plot consumer-idle results for experiment 2 (gang scheduling: fluence vs default).
 
 Two modes, auto-detected from the data:
 
@@ -53,15 +53,15 @@ def load_rows(paths):
     for path in paths:
         with open(path, newline="") as f:
             for r in csv.DictReader(f):
-                if not r.get("scheduler") or not r.get("total_worker_idle_s"):
+                if not r.get("scheduler") or not r.get("total_consumer_idle_s"):
                     continue
                 try:
                     rec = {
                         "backend":   (r.get("backend") or "?").strip(),
                         "scheduler": r["scheduler"].strip(),
-                        "idle":      float(r["total_worker_idle_s"]),
+                        "idle":      float(r["total_consumer_idle_s"]),
                         "qpu":       float(r.get("qpu_queue_wait_s") or 0),
-                        "n_workers": int(float(r.get("n_workers") or 0)),
+                        "n_workers": int(float(r.get("n_consumers") or 0)),  # CSV col n_consumers
                         "n_nodes":   int(float(r.get("n_nodes") or 0)),
                     }
                 except ValueError:
@@ -143,8 +143,8 @@ def plot_single(rows, backend, out, title):
             ax1.plot([xc - sub_w * 0.35, xc + sub_w * 0.35], [st.median(v)] * 2,
                      color="black", lw=1.6, zorder=4)
     ax1.set_xticks(range(n_cfg)); ax1.set_xticklabels([label(*c) for c in configs])
-    ax1.set_ylabel("total worker idle (s)"); ax1.set_ylim(bottom=0)
-    ax1.set_title("Per-run worker idle  (each point = one repeat; bar = median)")
+    ax1.set_ylabel("total consumer idle (s)"); ax1.set_ylim(bottom=0)
+    ax1.set_title("Per-run consumer idle  (each point = one repeat; bar = median)")
     ax1.grid(axis="y", alpha=0.3); ax1.legend(title="scheduler")
     if n_cfg > 1:
         ax1.set_xlabel("configuration")
@@ -162,8 +162,8 @@ def plot_single(rows, backend, out, title):
             ax2.text(xc, m + sd, f"{m:.0f}+/-{sd:.0f}", ha="center", va="bottom",
                      fontsize=8.5, fontweight="bold")
     ax2.set_xticks(range(n_cfg)); ax2.set_xticklabels([label(*c) for c in configs])
-    ax2.set_ylabel("mean worker idle (s)"); ax2.set_ylim(bottom=0)
-    ax2.set_title("Mean worker idle  (error bars = stdev)")
+    ax2.set_ylabel("mean consumer idle (s)"); ax2.set_ylim(bottom=0)
+    ax2.set_title("Mean consumer idle  (error bars = stdev)")
     ax2.grid(axis="y", alpha=0.3); ax2.legend(title="scheduler")
     if n_cfg > 1:
         ax2.set_xlabel("configuration")
@@ -178,7 +178,7 @@ def plot_single(rows, backend, out, title):
     if allq:
         cap.append(f"QPU wait~{st.mean(allq):.1f}s")
     fig.text(0.5, -0.02, " . ".join(cap), ha="center", fontsize=8.5, style="italic")
-    fig.suptitle(title or f"Gang scheduling worker idle - backend={backend}",
+    fig.suptitle(title or f"Gang scheduling consumer idle - backend={backend}",
                  fontsize=13, fontweight="bold")
     fig.tight_layout(rect=[0, 0.03, 1, 0.96])
     fig.savefig(out, dpi=150, bbox_inches="tight")
@@ -272,7 +272,7 @@ def plot_cross(rows, out, title, fixed_w):
                                             show_legend=(i == n_panels - 1))
         nmins.append(nmin); nmaxs.append(nmax); all_notes += notes
         if i == 0:
-            axes[i].set_ylabel("mean worker idle (s)")
+            axes[i].set_ylabel("mean consumer idle (s)")
 
     # Report multi-run bars (so averaging across repeats is visible, not hidden).
     for note in all_notes:

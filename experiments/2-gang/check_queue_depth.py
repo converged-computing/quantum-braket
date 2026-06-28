@@ -2,7 +2,8 @@ import boto3
 from braket.aws import AwsDevice, AwsQuantumTask
 
 # Device queue depth
-device = AwsDevice("arn:aws:braket:eu-north-1::device/qpu/iqm/Emerald")
+device = AwsDevice("arn:aws:braket:eu-north-1::device/qpu/iqm/Garnet")
+device = AwsDevice("arn:aws:braket:us-west-1::device/qpu/rigetti/Cepheus-1-108Q")
 depth = device.queue_depth()
 print(f"IQM Garnet queue depth:")
 print(f"  normal tasks : {depth.quantum_tasks}")

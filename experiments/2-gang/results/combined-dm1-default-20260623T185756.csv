@@ -1,2 +1,0 @@
-run_name,backend,scheduler,n_workers,n_nodes,n_shots,seed,batch_wall_s,leader_wall_s,qpu_queue_wait_s,leader_submit_to_result_s,total_worker_idle_s,avg_worker_idle_s,worker_node_seconds,n_workers_completed,leader_failed,cost_aggregated,workers_completed,timestamp,worker_0_idle_s,worker_1_idle_s,worker_2_idle_s,worker_3_idle_s
-gang-dm1-default-w4-q10,dm1,default,4,10,1000,42,24.666,17.0,1.698,3.905,51.402,12.85,51.402,4,False,,4,2026-06-23T18:57:56.620694+00:00,12.825,12.752,12.906,12.919

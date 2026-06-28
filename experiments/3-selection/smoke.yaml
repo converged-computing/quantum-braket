@@ -1,70 +1,56 @@
-# role-smoke.yaml — minimal check that the Fluence role annotation works end to
-# end, with NO quantum work and NO cost. Two pods in one group:
-#   leader (role: leader)  -> Fluence injects the sidecar + FLUENCE_ROLE=leader
-#   worker (role: worker)  -> Fluence gates it (quantum.braket/ready) + FLUENCE_ROLE=worker
+# smoke.yaml — minimal check that the Fluence STANDALONE quantum path works end
+# to end for the selection experiment, with NO cost (the command is a sleep, so
+# nothing is submitted to a backend).
 #
-# We override the container command to just sleep and print env, so nothing is
-# submitted to a backend. This isolates the webhook behavior (role -> gating,
-# role -> $FLUENCE_ROLE injection) from the application.
+# This experiment uses standalone quantum pods (no group label, no role, no
+# gating). Per the current Fluence model, a quantum pod with no group label is
+# scheduled standalone: Fluence matches it against the resource graph, injects
+# the matched backend as FLUXION_BACKEND (+ FLUXION_<attr>, e.g. FLUXION_ARN),
+# stages the Python interceptor, and lets the pod run immediately (it is NOT
+# gated, because there are no workers to coordinate).
 #
-# What to verify after `kubectl apply -f role-smoke.yaml`:
-#   1. leader has FLUENCE_ROLE=leader:
-#        kubectl exec role-smoke-leader -c gang -- printenv FLUENCE_ROLE   # -> leader
-#   2. leader has the sidecar injected:
-#        kubectl get pod role-smoke-leader -o jsonpath='{.spec.containers[*].name}'  # includes fluence-sidecar
-#   3. worker is GATED (so it won't be running yet):
-#        kubectl get pod role-smoke-worker -o jsonpath='{.spec.schedulingGates}'     # quantum.braket/ready
-#   4. worker also carries the role env (visible in spec even while gated):
-#        kubectl get pod role-smoke-worker -o jsonpath='{range .spec.containers[*]}{.name}{": "}{range .env[?(@.name=="FLUENCE_ROLE")]}{.valueFrom.fieldRef.fieldPath}{end}{"\n"}{end}'
+# What to verify after `kubectl apply -f smoke.yaml`:
+#   1. the pod is NOT gated (runs straight away — no quantum.braket/ready gate):
+#        kubectl get pod sel-smoke -o jsonpath='{.spec.schedulingGates}'   # -> empty
+#   2. Fluence injected the matched backend env:
+#        kubectl exec sel-smoke -c sampler -- printenv FLUXION_BACKEND       # -> e.g. sv1
+#        kubectl exec sel-smoke -c sampler -- printenv FLUXION_ARN           # -> device ARN
+#   3. the interceptor was staged (init container present) + PYTHONPATH set:
+#        kubectl get pod sel-smoke -o jsonpath='{.spec.initContainers[*].name}'  # includes fluence-stage
+#        kubectl exec sel-smoke -c sampler -- printenv PYTHONPATH            # -> /opt/fluence-staged
 #
-# Cleanup:  kubectl delete -f role-smoke.yaml
+# To smoke-test CLIENT-SIDE selection too, submit through the plugin instead:
+#        kubectl fluence apply -f smoke.yaml --attributes cost-attributes.yaml
+#   then confirm the require-backend pin was stamped:
+#        kubectl get pod sel-smoke -o jsonpath='{.metadata.annotations.fluence\.flux-framework\.org/require-backend}'
 #
-# NOTE: both pods request the QPU resource (fluxion.flux-framework.org/qpu) so
-# Fluence's quantum handler engages — that request is what triggers the
-# role/sidecar/gating path. No task is ever submitted because the command is a
-# sleep, so this costs nothing.
+# Cleanup:  kubectl delete -f smoke.yaml
+#
+# NOTE: the pod requests the QPU resource (fluxion.flux-framework.org/qpu) so
+# Fluence's quantum + fluxion handlers engage — that request is what triggers the
+# standalone interceptor/env path. No task is ever submitted (the command is a
+# sleep), so this costs nothing.
 ---
 apiVersion: v1
 kind: Pod
 metadata:
-  name: role-smoke-leader
+  name: sel-smoke
   labels:
-    app: role-smoke
-    fluence.flux-framework.org/group: role-smoke
-  annotations:
-    fluence.flux-framework.org/role: leader
-    fluence.flux-framework.org/expected-workers: "1"
-    fluence.flux-framework.org/require-qrmi_type: braket-gate
+    app: sel-smoke
+  # Add the select-* annotations below (and submit via `kubectl fluence apply`)
+  # to also smoke-test client-side selection. Left off here so a plain
+  # `kubectl apply` exercises the capability-only (baseline) path.
+  # annotations:
+  #   fluence.flux-framework.org/select-backend: "braket"
+  #   fluence.flux-framework.org/select-policy: "min-cost"
+  #   fluence.flux-framework.org/select-candidates: "sv1,dm1,tn1"
 spec:
   schedulerName: fluence
   restartPolicy: Never
   containers:
-    - name: gang
+    - name: sampler
       image: busybox:1.36
-      command: ["sh", "-c", "echo FLUENCE_ROLE=$FLUENCE_ROLE; sleep 600"]
-      resources:
-        requests:
-          fluxion.flux-framework.org/qpu: "1"
-        limits:
-          fluxion.flux-framework.org/qpu: "1"
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: role-smoke-worker
-  labels:
-    app: role-smoke
-    fluence.flux-framework.org/group: role-smoke
-  annotations:
-    fluence.flux-framework.org/role: worker
-    fluence.flux-framework.org/require-qrmi_type: braket-gate
-spec:
-  schedulerName: fluence
-  restartPolicy: Never
-  containers:
-    - name: gang
-      image: busybox:1.36
-      command: ["sh", "-c", "echo FLUENCE_ROLE=$FLUENCE_ROLE; sleep 600"]
+      command: ["sh", "-c", "echo FLUXION_BACKEND=$FLUXION_BACKEND FLUXION_ARN=$FLUXION_ARN; sleep 600"]
       resources:
         requests:
           fluxion.flux-framework.org/qpu: "1"

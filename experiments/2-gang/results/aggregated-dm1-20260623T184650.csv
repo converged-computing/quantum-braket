@@ -1,7 +1,0 @@
-scheduler,backend,n_workers,n_nodes,n_repeats,qpu_wait_s_mean,qpu_wait_s_stdev,worker_idle_s_mean,worker_idle_s_stdev,node_seconds_mean,node_seconds_stdev
-default,dm1,2,10,10,1.786,0.048,24.944,0.584,24.944,0.584
-default,dm1,4,10,10,1.885,0.36,50.981,1.479,50.981,1.479
-default,dm1,8,10,10,1.787,0.044,106.383,9.64,106.383,9.64
-fluence,dm1,2,10,10,1.907,0.337,4.854,0.537,4.854,0.537
-fluence,dm1,4,10,10,2.017,0.45,10.626,0.572,10.626,0.572
-fluence,dm1,8,10,10,1.836,0.093,30.431,1.299,30.431,1.299
