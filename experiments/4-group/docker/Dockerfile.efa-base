@@ -1,0 +1,47 @@
+# Shared base: Amazon EFA + Open MPI, for building HPC apps that run over EFA on
+# Hpc7a. Apps FROM this image build against /opt/amazon/openmpi (the AWS-tuned
+# Open MPI + libfabric the EFA installer provides) so MPI uses the EFA fabric.
+#
+# Build:
+#   docker build -f Dockerfile.efa-base -t ghcr.io/<you>/efa-openmpi-base:noble .
+#
+# Verify EFA/MPI inside a built app container (on an EFA host):
+#   fi_info -p efa                         # must list the efa provider
+#   ompi_info --parsable --all | grep mtl  # must show mtl:ofi (libfabric/EFA)
+FROM ubuntu:24.04
+
+ARG EFA_INSTALLER_VERSION=latest
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Toolchain + libs for HPC apps, PLUS the packages the EFA installer's own
+# dependency step needs (pciutils, environment-modules, tcl). We install them
+# here and, crucially, do NOT delete /var/lib/apt/lists before the installer
+# runs — the installer calls `apt install` internally and needs a live index.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential gfortran gcc g++ make cmake git \
+        ca-certificates curl wget pkg-config \
+        libfftw3-dev libfftw3-mpi-dev \
+        libblas-dev liblapack-dev \
+        libhdf5-dev libxml2-dev libboost-all-dev \
+        libnuma-dev hwloc libhwloc-dev \
+        autoconf automake libtool \
+        pciutils environment-modules tcl
+
+# Install Amazon EFA software (libfabric + Open MPI). The installer runs its own
+# `apt install` for dependencies, so the apt index from the step above must still
+# be present (we have NOT wiped /var/lib/apt/lists yet). --skip-kmod: the kernel
+# module lives on the host/node, not the container. -n / --no-verify: skip the
+# install-time fabric ping (no EFA device during a build).
+RUN cd /tmp \
+    && curl -O https://efa-installer.amazonaws.com/aws-efa-installer-${EFA_INSTALLER_VERSION}.tar.gz \
+    && tar -xf aws-efa-installer-${EFA_INSTALLER_VERSION}.tar.gz \
+    && cd aws-efa-installer \
+    && ./efa_installer.sh -y --skip-kmod --skip-limit-conf --no-verify \
+    && cd /tmp && rm -rf aws-efa-installer* \
+    && rm -rf /var/lib/apt/lists/*
+
+# Put EFA libfabric + Open MPI on PATH for all downstream builds and runs.
+ENV PATH=/opt/amazon/openmpi/bin:/opt/amazon/efa/bin:${PATH}
+ENV LD_LIBRARY_PATH=/opt/amazon/openmpi/lib:/opt/amazon/openmpi/lib64:/opt/amazon/efa/lib:/opt/amazon/efa/lib64
+ENV OPAL_PREFIX=/opt/amazon/openmpi
+# mpicc/mpicxx/mpifort now resolve to the EFA Open MPI wrappers.

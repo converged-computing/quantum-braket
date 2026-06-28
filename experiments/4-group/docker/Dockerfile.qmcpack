@@ -1,0 +1,28 @@
+# QMCPACK against Amazon EFA Open MPI. Full precision (the H2 orbital-opt smoke
+# test and the NiO DMC run both work; mixed precision breaks the optimizer).
+# Staged: a small H2 input at /opt/smoke (local test) + NiO strong-scale data.
+# test:       qmcpack h2_orb_opt.xml              (workdir /opt/smoke)
+# experiment: qmcpack NiO-fcc-S8-dmc-strongscale.xml  (workdir below)
+FROM ghcr.io/flux-framework/flux-k8s-nio-data AS niodata
+FROM ghcr.io/converged-computing/efa-openmpi-base:noble
+
+COPY --from=niodata /NiO-fcc-supertwist111-supershift000-S8.h5 /coral2/NiO/NiO-fcc-supertwist111-supershift000-S8.h5
+
+ARG qmcpack_version=3.16.0
+RUN cd /opt \
+    && wget -q https://github.com/QMCPACK/qmcpack/archive/refs/tags/v${qmcpack_version}.tar.gz \
+    && tar -xf v${qmcpack_version}.tar.gz && rm v${qmcpack_version}.tar.gz \
+    && cd qmcpack-${qmcpack_version}/build \
+    && cmake -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx \
+        -DENABLE_SOA=1 -DQMC_DATA=/coral2 .. \
+    && make -j"$(nproc)" \
+    && cp bin/qmcpack /usr/local/bin/qmcpack \
+    && cp -r /opt/qmcpack-${qmcpack_version}/tests/molecules/H2_ae /opt/smoke
+
+WORKDIR /opt/qmcpack-3.16.0/build/tests/performance/NiO/dmc-a32-e384-batched_driver-DU32
+RUN sed '/<loop/,/<\/loop>/d' /opt/smoke/h2_orb_opt.xml \
+    | sed 's#<parameter name="blocks"> 512 #<parameter name="blocks"> 20 #' \
+    | sed 's#<parameter name="steps"> 200 #<parameter name="steps"> 10 #' \
+    | sed 's#<parameter name="warmupsteps"> 500 #<parameter name="warmupsteps"> 20 #' \
+    > /opt/smoke/h2_vmc.xml
+CMD ["qmcpack", "NiO-fcc-S8-dmc-strongscale.xml"]

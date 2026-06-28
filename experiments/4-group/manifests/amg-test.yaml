@@ -1,0 +1,36 @@
+# AMG gang via the Flux Operator, scheduled by Fluence.
+# 2022 size: 16 ranks, weak scaling, -P 4 2 2 -n 128 128 128.
+# size=2 pods x 8 cpus = 16 ranks fits comfortably with packing on one 96-core
+# Hpc7a node; set size/cpu to taste. The Flux Operator forms a Flux instance
+# across the pods and runs amg via the container command.
+apiVersion: flux-framework.org/v1alpha2
+kind: MiniCluster
+metadata:
+  name: amg
+spec:
+  size: 2
+  tasks: 2
+  pod:
+    schedulerName: fluence
+    labels:
+      fluence.flux-framework.org/group: amg
+  #flux:
+  #  container:
+  #    image: ghcr.io/converged-computing/flux-view-ubuntu:tag-jammy
+  containers:
+  - image: ghcr.io/converged-computing/amg-efa:latest
+    imagePullPolicy: Never
+    command: amg -P 2 1 1 -n 4 4 4
+    #environment:
+    #  FI_PROVIDER: "efa"
+    #  FI_EFA_FORK_SAFE: "1"
+    volumes:
+      # Ensure /dev/shm does not limit efa
+      shared-memory:
+        emptyDir: true
+        emptyDirMedium: "memory"
+    #resources:
+    #  limits:
+    #    vpc.amazonaws.com/efa: 1
+    #  requests:
+    #    vpc.amazonaws.com/efa: 1
