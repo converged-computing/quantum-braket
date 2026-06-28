@@ -2,248 +2,167 @@
 
 ## What this experiment measures
 
-The two-queue problem with a realistic gang workflow: one leader pod submits a
-QAOA circuit to a QPU, and N worker pods process the measurement shots in
-parallel. Both conditions **gang-schedule** the pods (1 leader + N workers)
-all-or-nothing; the only variable is whether the scheduler is aware of the QPU
-queue.
+The two-queue problem with a realistic gang workflow. A gang of **N identical
+pods** runs **one** quantum task and shares its result:
 
-**Default (baseline):** native Kubernetes gang scheduling via a
-`scheduling.k8s.io/v1alpha2` PodGroup on the default scheduler. All pods start
-together. The leader submits to the QPU; the workers then idle on classical
-nodes for the entire QPU queue wait, consuming CPU/memory while doing nothing
-useful. The leader selects its device explicitly via `BRAKET_DEVICE` (Fluence is
-not placing the work).
+- **producer** (completion index 0) builds the QAOA circuit, submits the single
+  real QPU task, and publishes its task id;
+- **consumers** (the other N−1) do **not** submit — they obtain the producer's
+  task id, fetch the **shared** result, and process their shot partition.
 
-**Fluence:** the same gang, but Fluence is QPU-aware. The leader requests
-`fluxion.flux-framework.org/qpu`, so Fluence places the quantum work (injecting
-the `FLUXION_*` env contract, including `FLUXION_ARN`) and the quantum handler
-injects a sidecar. The workers are admitted `SchedulingGated` — zero node
-resources — and carry the `fluence-quantum-classical` priority class (set by the
-webhook at admission, since it is immutable afterward). The sidecar finds the
-leader's QPU task, watches its queue position, and ungates the workers as the
-result becomes ready.
+Both arms run this same gang. The only variable is the **scheduler**, and with it
+whether the consumers can be held off the cluster while the QPU queue drains.
+
+**Fluence (`coordination: shared`).** The pods request
+`fluxion.flux-framework.org/qpu`, so Fluence places the quantum work — it matches
+a backend from the resource graph by **name** and injects `FLUXION_ARN` — elects
+the producer, and admits the N−1 consumers `SchedulingGated` (zero node
+resources). A sidecar watches the producer's QPU task and ungates the consumers
+as the result becomes ready, handing each the task id via `FLUENCE_QUANTUM_JOB_ID`.
+Gated consumers hold **no** classical node during the queue wait, so consumer
+idle ≈ 0.
+
+**Default (baseline).** Native Kubernetes gang scheduling via a
+`scheduling.k8s.io/v1alpha2` PodGroup on the default scheduler — all N pods start
+together, all-or-nothing. There is no Fluence, so the producer/consumer role is
+derived from the Job completion index, the producer names its device **manually**
+via `BRAKET_DEVICE` (no Fluxion to inject it), and nothing gates the consumers:
+they idle on classical nodes for the whole QPU queue wait, discovering the
+producer's task id from S3.
 
 The comparison isolates one variable: scheduler awareness of the quantum queue.
+(Experiment 4 isolates a different variable — shared vs independent coordination
+*mode* under Fluence, for cost minimization. This one is about the *scheduler*.)
 
 ## Key metric
 
-`total_worker_idle_s` = sum over workers of (leader-ready-seen − worker-start) —
-the wasted classical compute the paper characterizes. With Fluence this is small
-(workers stay gated, consuming nothing, until the QPU task is ready); without it
-the workers idle through the leader's whole startup + QPU wait. `worker_idle_s`
-is reported per run alongside `qpu_wait_s` and `worker_node_seconds` (the summed
-idle across workers).
+`total_consumer_idle_s` = Σ over consumers of (`result_ready_ts` −
+`consumer_start_ts`) — node-seconds a consumer is up but has no result yet, i.e.
+the wasted classical compute.
 
-> Note on backends: on a simulator (sv1) there is no real queue, so the contrast
-> reflects co-scheduling overhead (workers idling through leader startup), not a
-> QPU backlog. The headline queue contrast requires a **busy** QPU — check the
-> device queue before paying for a run (see "Choosing a backend").
+- **fluence** ≈ 0 (consumers stay gated, consuming nothing, until the task is
+  ~ready);
+- **default** ≈ (N−1) × T_queue (every consumer idles through the whole wait).
 
-HOWEVER - we need to use the simulators so the queue wait time is fairly comparable.
+`mean_consumer_idle_s` and `qpu_queue_wait_s` are reported per run alongside it.
 
-## S3 coordination
+> On a simulator (sv1/dm1/tn1) there is no real queue, so the contrast reflects
+> co-scheduling overhead, not a QPU backlog. The headline queue contrast needs a
+> **busy** QPU — check the device's queue depth before paying for a run.
 
-Both conditions use S3 for leader→worker coordination, namespaced by a unique
-per-run id (`RUN_ID`, set by the orchestrator) so concurrent or repeated runs
-never collide — no manual cleanup between runs:
+## How roles and devices are wired
 
-```
-s3://<bucket>/fluence-gang/<RUN_ID>/leader-ready     # leader writes when QPU done
-s3://<bucket>/fluence-gang/<RUN_ID>/worker-<i>.json  # each worker writes partial result
-s3://<bucket>/fluence-gang/<RUN_ID>/final.json       # leader writes aggregated result
-```
+|                       | fluence arm                              | default arm                          |
+|-----------------------|------------------------------------------|--------------------------------------|
+| pod set               | indexed Job, N pods, `coordination: shared` | indexed Job, N pods, native PodGroup |
+| role                  | injected by the webhook (index 0 = producer) | from `JOB_COMPLETION_INDEX` (0 = producer) |
+| device                | `require-backend: <name>` → Fluxion injects `FLUXION_ARN` | `BRAKET_DEVICE: <arn>` set by hand    |
+| consumers during wait | `SchedulingGated` (no node)              | running and idle                     |
+| task-id hand-off      | `FLUENCE_QUANTUM_JOB_ID` (sidecar)       | producer publishes to S3, consumers poll |
 
-`<bucket>` is the per-region Braket bucket `amazon-braket-<region>-<account>`.
-The region is the **device's** region (a cross-region device such as Rigetti in
-`us-west-1` writes to the us-west-1 bucket); both leader and workers derive it
-from `BRAKET_REGION`, set per run by the orchestrator, so they always agree.
+The experiment **never names an ARN for the fluence arm** — it sets only a
+backend name and lets Fluxion resolve it. The ARN appears only on the default
+arm, because without Fluence you must pick the device yourself; that asymmetry is
+the point.
 
-With Fluence, workers also receive the vendor-neutral job id via the
-`fluence.flux-framework.org/quantum-job-id` annotation (stamped by the sidecar at
-ungate time, read as `FLUENCE_QUANTUM_JOB_ID`), so they fetch the result directly
-without scanning S3.
+## S3 task-id hand-off (default arm only)
+
+The producer writes `{task_arn, n_qubits, n_consumers, region}` to
+`s3://<braket-bucket>/fluence-gang/<RUN_ID>/producer-task.json` right after
+submitting. Default-arm consumers poll that key (the Fluence arm never reads it —
+it gets the id from `FLUENCE_QUANTUM_JOB_ID`). `RUN_ID` is unique per run, so a
+run can never read a previous run's object — no manual S3 cleanup between runs.
+The bucket defaults to `amazon-braket-<region>-<account>`; override with
+`S3_BUCKET`.
 
 ## Prerequisites
 
-The cluster runs on **GKE with alpha features enabled** (`--enable-kubernetes-alpha`
-turns on all alpha API groups, including `scheduling.k8s.io/v1alpha2` PodGroups,
-with no extra runtime-config). `cluster/setup.sh` provisions the cluster and
-installs Fluence, the device plugin, and the Braket resource graph.
-
-```bash
-cd cluster && bash setup.sh    # creates the GKE alpha cluster + installs Fluence
-```
-
-`setup.sh` also creates the AWS Braket credentials secret if you provide the
-values; otherwise create it yourself before running:
-
-```bash
-kubectl create secret generic aws-braket-credentials \
-  --from-literal=AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
-  --from-literal=AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
-  --from-literal=AWS_DEFAULT_REGION=us-east-1
-```
-
-The Braket resource graph (`../../hack/fluence-resources.yaml`) is applied by
-`setup.sh`. It contains only the devices this experiment uses (the sv1/tn1/dm1
-gate simulators plus a small set of gate QPUs); it deliberately excludes AHS
-devices and the most expensive QPUs. If you edit it, re-apply and restart the
-scheduler and webhook so both re-read it:
-
-```bash
-kubectl apply -f ../../hack/fluence-resources.yaml
-kubectl rollout restart -n kube-system deployment/fluence deployment/fluence-webhook
-```
+- A cluster with Fluence deployed (the role-aware webhook + sidecar) and the
+  default scheduler serving `scheduling.k8s.io/v1alpha2` PodGroups. See
+  `cluster/setup.sh`.
+- The resource graph ConfigMap (`hack/fluence-resources.yaml`) loaded, so
+  `require-backend` names resolve.
+- A Braket credentials secret in the namespace:
+  ```
+  kubectl create secret generic aws-braket-credentials \
+    --from-literal=AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
+    --from-literal=AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
+    --from-literal=AWS_DEFAULT_REGION=us-east-1
+  ```
+- The gang image `ghcr.io/converged-computing/quantum-braket-gang:latest`
+  (built from `docker/gang/`).
 
 ## Choosing a backend (and avoiding surprise QPU cost)
 
-Real QPUs cost real money per task, and the queue-contrast result only appears
-when the device actually has a queue. Before a paid run, check the device:
+The fluence arm picks the device by **name** (`--backend`, e.g. `sv1`, `dm1`,
+`tn1`, `rigetti_cepheus`, `iqm_garnet`); Fluxion resolves it to an ARN. The
+default arm uses the ARN you pass with **`--device-arn`**. For a fair comparison
+point both at the **same device**.
 
-```bash
-aws braket get-device \
-  --device-arn arn:aws:braket:us-west-1::device/qpu/rigetti/Cepheus-1-108Q \
-  --region us-west-1 \
-  --query '{status:deviceStatus,queue:deviceQueueInfo}'
-```
-
-If `queueSize` is `0`, a run will only reproduce the simulator-style result (no
-queue to hide) while still charging for the task — wait for a non-zero queue, or
-use a simulator for mechanism checks.
-
-The Fluence arm pins the device with leader annotations so an unconstrained
-`qpu` request can't wander onto a more expensive device:
-
-- `fluence.flux-framework.org/require-qrmi_type: braket-gate` — keep a gate
-  circuit off analog/AHS devices.
-- `fluence.flux-framework.org/require-backend: <name>` — pin a specific device
-  (e.g. `sv1`). The orchestrator sets this to the run's `--backend`.
+Simulators (`sv1`/`dm1`/`tn1`) are billed per minute and have no real queue; real
+QPUs (`rigetti_*`, `iqm_*`) charge **per task** and may have long queues. The
+orchestrator prints a cost warning and asks for confirmation when the fluence
+backend isn't a known simulator, or the default `--device-arn` contains `/qpu/`
+(skip with `--yes`).
 
 ## Running the experiment
 
-The orchestrator drives both conditions, patches the manifests per run (unique
-`RUN_ID`, `BRAKET_REGION`, `require-backend`, worker count, etc.), collects
-timing from pod logs, and writes per-run and combined CSVs to `--out` (default
-`results/`). No S3 cleanup is needed between runs.
-
 ```bash
-# List the backends the orchestrator knows:
-python3 run_experiment.py --list-backends
+# Offline: render the patched manifests (no cluster), to inspect what gets applied
+python3 run_experiment.py --schedulers fluence --n-consumers 4 --render
 
-# SV1 simulator, both conditions (mechanism check; no real queue):
+# SV1 simulator, both arms (mechanism check; no real queue)
 python3 run_experiment.py --backend sv1 --schedulers default fluence
 
-# Sweep worker counts (both conditions):
-python3 run_experiment.py --backend sv1 --schedulers default fluence --n-workers 2 4 8
+# Sweep consumer count, repeat for mean ± stdev  (N = consumers + 1) DO TWICE
+python3 run_experiment.py --backend sv1 --schedulers default fluence --n-consumers 2 4 8 --repeat 5
+python3 run_experiment.py --backend dm1 --schedulers default fluence --n-consumers 2 4 8 --repeat 5
+# python3 run_experiment.py --backend tn1 --schedulers default fluence --n-consumers 2 4 8 --repeat 5
+python3 run_experiment.py --backend rigetti_cepheus --schedulers default fluence --n-consumers 2 4 8 --repeat 5 --n-shots 100
+python3 run_experiment.py --backend iqm_garnet --schedulers default fluence --n-shots 100
 
-# Vary problem size (qubits) and shots:
-python3 run_experiment.py --backend sv1 --schedulers default fluence --n-nodes 8 10 12 --n-shots 1000
 
-# A real QPU — check the queue first (see above). This charges per task:
-python3 run_experiment.py --backend rigetti_cepheus --schedulers default fluence
-
-# Single condition only:
+# Single arm only
 python3 run_experiment.py --backend sv1 --scheduler fluence
 
-# Plot results
-python3 plot_results.py results/combined-*.csv --workers 4 -o cross.png
-```
-```console
- note: dm1/default@2w averages 10 runs (idle each=[25, 26, 25, 25, 24, 24, 25, 25, 25, 25])
-  note: dm1/fluence@2w averages 10 runs (idle each=[5, 5, 5, 4, 5, 5, 5, 4, 5, 6])
-  note: sv1/default@2w averages 10 runs (idle each=[25, 25, 25, 25, 25, 25, 25, 24, 25, 25])
-  note: sv1/fluence@2w averages 10 runs (idle each=[4, 4, 5, 5, 5, 4, 5, 5, 5, 4])
-  note: tn1/default@2w averages 10 runs (idle each=[76, 54, 55, 56, 55, 55, 55, 54, 57, 55])
-  note: tn1/fluence@2w averages 10 runs (idle each=[5, 4, 5, 5, 5, 5, 5, 4, 4, 5])
-  note: dm1/default@4w averages 10 runs (idle each=[50, 52, 51, 54, 50, 49, 51, 51, 50, 51])
-  note: dm1/fluence@4w averages 10 runs (idle each=[11, 11, 12, 10, 11, 10, 10, 11, 10, 11])
-  note: sv1/default@4w averages 10 runs (idle each=[49, 97, 50, 48, 49, 50, 51, 49, 50, 49])
-  note: sv1/fluence@4w averages 10 runs (idle each=[11, 11, 13, 11, 11, 10, 11, 10, 11, 10])
-  note: tn1/default@4w averages 10 runs (idle each=[111, 110, 109, 110, 111, 111, 112, 110, 111, 110])
-  note: tn1/fluence@4w averages 10 runs (idle each=[11, 11, 11, 11, 10, 11, 11, 11, 10, 11])
-  note: dm1/default@8w averages 10 runs (idle each=[103, 134, 105, 104, 101, 102, 102, 103, 105, 104])
-  note: dm1/fluence@8w averages 10 runs (idle each=[31, 29, 30, 29, 33, 32, 32, 31, 29, 30])
-  note: sv1/default@8w averages 10 runs (idle each=[104, 101, 183, 105, 106, 101, 101, 99, 100, 99])
-  note: sv1/fluence@8w averages 10 runs (idle each=[31, 29, 30, 31, 30, 31, 32, 30, 33, 30])
-  note: tn1/default@8w averages 10 runs (idle each=[347, 223, 225, 273, 221, 222, 226, 227, 226, 226])
-  note: tn1/fluence@8w averages 10 runs (idle each=[34, 30, 35, 32, 31, 32, 29, 33, 35, 30])
-wrote img/combined-dm1-20260623T184650-cross-all.png
-
-stats:
-  dm1 2w default  n=10 mean=24.94 median=24.82 stdev=0.58
-  dm1 4w default  n=10 mean=50.98 median=51.02 stdev=1.48
-  dm1 8w default  n=10 mean=106.38 median=103.39 stdev=9.64
-  dm1 2w fluence  n=10 mean=4.85 median=4.79 stdev=0.54
-  dm1 4w fluence  n=10 mean=10.63 median=10.70 stdev=0.57
-  dm1 8w fluence  n=10 mean=30.43 median=30.48 stdev=1.30
-  sv1 2w default  n=10 mean=24.95 median=25.02 stdev=0.37
-  sv1 4w default  n=10 mean=54.14 median=49.42 stdev=14.99
-  sv1 8w default  n=10 mean=109.76 median=100.96 stdev=25.88
-  sv1 2w fluence  n=10 mean=4.56 median=4.62 stdev=0.34
-  sv1 4w fluence  n=10 mean=10.94 median=10.79 stdev=0.76
-  sv1 8w fluence  n=10 mean=30.72 median=30.49 stdev=1.38
-  tn1 2w default  n=10 mean=57.29 median=55.19 stdev=6.59
-  tn1 4w default  n=10 mean=110.47 median=110.44 stdev=1.04
-  tn1 8w default  n=10 mean=241.67 median=226.04 stdev=40.07
-  tn1 2w fluence  n=10 mean=4.76 median=4.91 stdev=0.45
-  tn1 4w fluence  n=10 mean=10.89 median=11.13 stdev=0.56
-  tn1 8w fluence  n=10 mean=32.07 median=31.72 stdev=2.16
-
-```
-
-If you need cleanup between tests (I did this a lot during development):
-
-```bash
-kubectl delete podgroup -A --all --ignore-not-found
-kubectl delete pods -A -l app=quantum-braket-gang --ignore-not-found
-kubectl rollout restart -n kube-system deployment/fluence
-kubectl rollout status -n kube-system deployment/fluence --timeout=120s
-kubectl rollout restart -n kube-system deployment/fluence-webhook
-kubectl rollout status -n kube-system deployment/fluence-webhook --timeout=120s
-```
-
-Here is what I ran to generate the final data for the simulation experiments:
-
-```bash
-for b in sv1 dm1 tn1; do
-  python3 run_experiment.py --backend $b --schedulers default fluence \
-    --n-workers 2 4 8 --repeat 10
-done
+# Plot
+python3 plot_results.py results/combined-sv1-*.csv -o img/gang-sv1.png
 ```
 
 ### Useful flags
 
-| Flag | Default | Meaning |
-|------|---------|---------|
-| `--backend` | `sv1` | Backend name (see `--list-backends`). |
-| `--schedulers` | — | One or both of `default fluence` (overrides `--scheduler`). |
-| `--scheduler` | — | A single scheduler (`default` or `fluence`). |
-| `--n-workers` | `4` | Worker counts to sweep (space-separated). |
-| `--n-shots` | `1000` | Shots per task. |
-| `--n-nodes` | `10` | Problem sizes in qubits (space-separated). |
-| `--seed` | `42` | RNG seed. |
-| `--namespace` | `default` | Namespace to run in. |
-| `--out` | `results/` | Output directory for CSVs. |
-| `--keep-pods` | off | Don't delete pods after a run (for debugging). |
-| `--list-backends` | — | Print known backends and exit. |
-
-For the default condition the orchestrator sets `BRAKET_DEVICE` to the same
-backend the Fluence condition is pinned to, so the QPU queue wait is comparable;
-the methods section notes the default backend is fixed manually.
+- `--backend NAME` — fluence arm's `require-backend` (default `sv1`).
+- `--device-arn ARN` — default arm's `BRAKET_DEVICE` (default the SV1 ARN).
+- `--schedulers default fluence` / `--scheduler <one>`.
+- `--n-consumers 2 4 8` — consumer counts to sweep; total pods N = consumers + 1.
+- `--n-shots`, `--n-nodes`, `--seed`, `--repeat`, `--namespace`, `--out`.
+- `--render` — print patched manifests and exit. `--yes` — skip the cost prompt.
+- `--keep` — leave the Job/PodGroup in the cluster after the run.
+- `FLUENCE_GANG_TIMEOUT_S` (env) — orchestrator job wait AND the in-pod
+  `CONSUMER_TIMEOUT_S`; **default 0 = wait indefinitely** (a real QPU queue can
+  run for days). Set a positive number of seconds to cap it.
+- `POLL_TIMEOUT_S` (env) — bound on the Braket result poll in both arms
+  (default 2592000 = 30 days). This is what keeps `.result()` from giving up
+  mid-queue on a busy QPU.
 
 ## Output
 
-Each run writes `results/combined-<backend>-<scheduler>-<timestamp>.csv`, and a
-combined `results/combined-<backend>-<timestamp>.csv` across the runs in the
-invocation, with `qpu_wait_s`, `worker_idle_s`, and `worker_node_seconds` per
-condition.
+Per-run CSVs `combined-<backend>-<scheduler>-n<N>-<ts>.csv` and a combined
+`combined-<backend>-<ts>.csv` with: `scheduler`, `backend`, `n_pods`,
+`n_consumers`, `total_consumer_idle_s`, `mean_consumer_idle_s`,
+`qpu_queue_wait_s`, `n_consumers_observed`, `batch_wall_s`, `job_ok`. With
+`--repeat > 1` an `aggregated-<backend>-<ts>.csv` adds `idle_mean_s` /
+`idle_stdev_s` per (scheduler, N).
 
 ## Manifests
 
-- `pods/default/gang/pipeline-gang.yaml` — PodGroup (minCount = 1 + N) + leader +
-  N workers, native gang on the default scheduler; leader sets `BRAKET_DEVICE`.
-- `pods/fluence/gang/pipeline-gang.yaml` — leader (requests `qpu`, carries the
-  `require-*` pinning annotations) + N workers with the group label; the Fluence
-  webhook creates the PodGroup, gates the workers, sets their priority class, and
-  injects the sidecar onto the leader.
+- `pods/fluence/gang/pipeline-gang.yaml` — indexed Job, `coordination: shared`,
+  `require-backend` (name only), pods request the qpu resource; the webhook
+  elects the producer, gates consumers, and injects roles + the task id.
+- `pods/default/gang/pipeline-gang.yaml` — native `PodGroup` (minCount N) + an
+  indexed Job whose pods join it; `BRAKET_DEVICE` set by hand; role from the
+  completion index.
+
+The orchestrator patches names, counts (`completions`/`parallelism`/`group-size`/
+`minCount` = N, `N_CONSUMERS` = N−1), `require-backend` (fluence), `BRAKET_DEVICE`
+(default), and the problem env, so both manifests scale with `--n-consumers`.

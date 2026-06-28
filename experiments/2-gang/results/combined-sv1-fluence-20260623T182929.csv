@@ -1,2 +1,0 @@
-run_name,backend,scheduler,n_workers,n_nodes,n_shots,seed,batch_wall_s,leader_wall_s,qpu_queue_wait_s,leader_submit_to_result_s,total_worker_idle_s,avg_worker_idle_s,worker_node_seconds,n_workers_completed,leader_failed,cost_aggregated,workers_completed,timestamp,worker_0_idle_s,worker_1_idle_s,worker_2_idle_s,worker_3_idle_s
-gang-sv1-fluence-w4-q10,sv1,fluence,4,10,1000,42,56.319,35.0,1.826,3.869,11.293,2.823,11.293,4,False,,4,2026-06-23T18:29:29.999437+00:00,2.428,3.003,2.713,3.15

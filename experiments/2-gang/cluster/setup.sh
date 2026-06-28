@@ -32,10 +32,14 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
-CLUSTER_NAME="${CLUSTER_NAME:-exp2}"
+CLUSTER_NAME="${CLUSTER_NAME:-fluence-selection}"
 ZONE="${ZONE:-us-central1-a}"
 NUM_NODES="${NUM_NODES:-3}"
 MACHINE_TYPE="${MACHINE_TYPE:-e2-standard-4}"
+FLUENCE_BRANCH="${FLUENCE_BRANCH:-main}"
+echo "branch: $FLUENCE_BRANCH"
+sleep 3
+
 # Gang scheduling needs the Workload API (GenericWorkload) + GangScheduling.
 FEATURE_GATES="${FEATURE_GATES:-GenericWorkload=true,GangScheduling=true}"
 
@@ -87,11 +91,14 @@ kubectl api-resources --api-group=scheduling.k8s.io 2>/dev/null | grep -q podgro
 # "could not resolve a quantum provider from the backend" and workers never
 # ungate. So we apply the resource graph FIRST, then Fluence.
 log "Applying Braket resource graph (before Fluence, so the webhook loads it)"
-FLUENCE_REPO="https://raw.githubusercontent.com/converged-computing/fluence/main"
+FLUENCE_REPO="https://raw.githubusercontent.com/converged-computing/fluence/${FLUENCE_BRANCH}"
 kubectl apply -f "$HERE/../../../hack/fluence-resources.yaml"
 
 log "Installing Fluence"
-kubectl apply -f "$FLUENCE_REPO/deploy/fluence.yaml"
+cd /home/vanessa/Desktop/Code/fluence-refactor/fluence
+make test-deploy-recreate
+cd -
+# kubectl apply -f "$FLUENCE_REPO/deploy/fluence.yaml"
 kubectl rollout status -n kube-system deployment/fluence --timeout=180s
 kubectl rollout status -n kube-system deployment/fluence-webhook --timeout=120s
 
@@ -107,7 +114,9 @@ kubectl rollout status  -n kube-system deployment/fluence-webhook --timeout=120s
 # resource on nodes. Without it the scheduler cannot satisfy the leader's QPU
 # request, so the quantum handler never fires. (Required for the Fluence arm.)
 log "Installing Fluence device plugin (advertises the qpu resource)"
+cd /home/vanessa/Desktop/Code/fluence-refactor/fluence
 kubectl apply -f "$FLUENCE_REPO/deploy/device-plugin.yaml"
+cd -
 kubectl rollout status -n kube-system daemonset/fluence-deviceplugin --timeout=120s
 
 log "Waiting for the webhook to be ready"

@@ -1,376 +1,76 @@
----
-# Gang pipeline — FLUENCE SCHEDULER (gang scheduling + quantum gating)
+# Gang pipeline — FLUENCE SCHEDULER (producer/consumer gang, quantum-aware)
 #
-# Same gang semantics as the default condition, but Fluence is QPU-aware. The
-# leader requests fluxion.flux-framework.org/qpu, so Fluence PLACES the quantum
-# work (picks a backend from the resource graph, injects FLUXION_ARN) and the
-# quantum handler injects the sidecar + interceptor. The 4 workers are gated
-# until the sidecar sees the QPU task at position==1, then ungated with high
-# priority — so they consume ~0 idle classical node-time.
+# An indexed Job of N identical pods in one group with coordination=shared. The
+# Fluence webhook promotes completion index 0 to the PRODUCER (real QPU submit +
+# sidecar, role=producer, not gated) and gates the other N-1 as CONSUMERS
+# (role=consumer, handed the producer's task id as FLUENCE_QUANTUM_JOB_ID at
+# ungate). Consumers are SchedulingGated until the QPU task reaches queue
+# position ~1, so they hold NO classical node during the queue wait — i.e. ~0
+# idle. That reclaimed idle (vs the default arm) is exactly what this experiment
+# measures.
 #
-# Workers receive the (vendor-neutral) job id via the
-# fluence.flux-framework.org/quantum-job-id annotation, stamped by the sidecar
-# at ungate time and surfaced as FLUENCE_QUANTUM_JOB_ID.
+# Backend is annotation-driven: the pods request the qpu resource and Fluence
+# injects the matched device as FLUXION_ARN (require-backend pins the NAME; the
+# experiment never names an ARN here). require-qrmi_type keeps a gate circuit off
+# analog devices.
 #
-# All pods share the fluence.flux-framework.org/group label — Fluence identifies
-# the leader (first admitted) and gates the rest. The user creates no PodGroup
-# and sets no spec.schedulingGroup; the webhook does that.
-#
-# Deploy with:
-#   kubectl apply -f pods/fluence/gang/pipeline-gang.yaml
-apiVersion: v1
-kind: Pod
+# The pod template is byte-identical across pods; the producer/consumer role is
+# derived from the Job's completion index by the webhook — the user authors no
+# roles and no separate submitter pod.
+apiVersion: batch/v1
+kind: Job
 metadata:
-  name: qaoa-gang-leader
+  name: qaoa-gang                          # patched: run name
   labels:
     app: quantum-braket-gang
-    role: leader
-    fluence.flux-framework.org/group: qaoa-gang
-  annotations:
-    # Tells Fluence how many gated workers the sidecar should wait for before
-    # ungating (N-1). Set from N_WORKERS; the webhook propagates it to the
-    # sidecar. Known at admission even though worker names are not.
-    fluence.flux-framework.org/expected-workers: "4"
-    # Constrain backend selection: this is a GATE-based QAOA circuit, so Fluence
-    # must not place it on an analog/AHS device (e.g. aquila). require-<attr>
-    # adds a property constraint on the matched backend. braket-gate keeps it on
-    # the gate simulators/QPUs (sv1/tn1/dm1/rigetti/iqm/...). Add
-    # require-backend: sv1 to pin a specific device.
-    fluence.flux-framework.org/require-qrmi_type: braket-gate
-    # Pin to SV1 specifically. Without this, an unconstrained qpu request matches
-    # ANY braket-gate device in the graph — including real, billable QPUs
-    # (rigetti/iqm). For the SV1 baseline runs this must be set. The orchestrator
-    # overrides it per --backend.
-    fluence.flux-framework.org/require-backend: sv1
 spec:
-  schedulerName: fluence
-  restartPolicy: Never
-
-  initContainers:
-    - name: problem-generator
-      image: ghcr.io/converged-computing/quantum-braket-problem-generator:latest
-      imagePullPolicy: Always
-      env:
-        - name: N_NODES
-          value: "10"
-        - name: K_REGULAR
-          value: "3"
-        - name: SEED
-          value: "42"
-        - name: WORKSPACE
-          value: /workspace
-      volumeMounts:
-        - name: workspace
-          mountPath: /workspace
-      resources:
-        requests:
-          cpu: "100m"
-          memory: "128Mi"
-        limits:
-          cpu: "500m"
-          memory: "256Mi"
-
-    - name: transpiler
-      image: ghcr.io/converged-computing/quantum-braket-transpiler:latest
-      imagePullPolicy: Always
-      env:
-        - name: P_LAYERS
-          value: "1"
-        - name: WORKSPACE
-          value: /workspace
-      volumeMounts:
-        - name: workspace
-          mountPath: /workspace
-      resources:
-        requests:
-          cpu: "200m"
-          memory: "256Mi"
-        limits:
-          cpu: "1000m"
-          memory: "512Mi"
-
-  containers:
-    - name: gang
-      image: ghcr.io/converged-computing/quantum-braket-gang:latest
-      imagePullPolicy: Always
-      env:
-        - name: GANG_ROLE
-          value: "leader"
-        - name: RUN_ID
-          value: "manual-run"
-        - name: WORKSPACE
-          value: /workspace
-        - name: N_SHOTS
-          value: "1000"
-        - name: N_WORKERS
-          value: "4"
-        - name: WORKER_TIMEOUT_S
-          value: "600"
-        # No BRAKET_DEVICE: Fluence places the quantum work and injects
-        # FLUXION_ARN, which gang.py reads in preference. Requesting the qpu
-        # resource (below) is what triggers Fluence's quantum handler.
-        - name: AWS_ACCESS_KEY_ID
-          valueFrom:
-            secretKeyRef:
-              name: aws-braket-credentials
-              key: AWS_ACCESS_KEY_ID
-        - name: AWS_SECRET_ACCESS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: aws-braket-credentials
-              key: AWS_SECRET_ACCESS_KEY
-        - name: AWS_DEFAULT_REGION
-          valueFrom:
-            secretKeyRef:
-              name: aws-braket-credentials
-              key: AWS_DEFAULT_REGION
-        - name: BRAKET_REGION
-          value: "us-east-1"
-      volumeMounts:
-        - name: workspace
-          mountPath: /workspace
-      resources:
-        requests:
-          cpu: "500m"
-          memory: "512Mi"
-          fluxion.flux-framework.org/qpu: "1"
-        limits:
-          cpu: "2000m"
-          memory: "4Gi"
-          fluxion.flux-framework.org/qpu: "1"
-
-  volumes:
-    - name: workspace
-      emptyDir: {}
----
-# Workers — Fluence gates these until sidecar fires at QPU position==1.
-# FLUENCE_QUANTUM_JOB_ID is injected via the quantum-job-id annotation by the
-# sidecar at ungate time, then read via downward API.
-apiVersion: v1
-kind: Pod
-metadata:
-  name: qaoa-gang-worker-0
-  labels:
-    app: quantum-braket-gang
-    role: worker
-    fluence.flux-framework.org/group: qaoa-gang
-  annotations:
-    fluence.flux-framework.org/quantum-job-id: ""
-spec:
-  schedulerName: fluence
-  restartPolicy: Never
-  containers:
-    - name: gang
-      image: ghcr.io/converged-computing/quantum-braket-gang:latest
-      imagePullPolicy: Always
-      env:
-        - name: GANG_ROLE
-          value: "worker"
-        - name: RUN_ID
-          value: "manual-run"
-        - name: WORKER_INDEX
-          value: "0"
-        - name: N_WORKERS
-          value: "4"
-        - name: LEADER_TIMEOUT_S
-          value: "120"
-        # Task ARN injected by sidecar via annotation → downward API
-        - name: FLUENCE_QUANTUM_JOB_ID
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.annotations['fluence.flux-framework.org/quantum-job-id']
-        - name: AWS_ACCESS_KEY_ID
-          valueFrom:
-            secretKeyRef:
-              name: aws-braket-credentials
-              key: AWS_ACCESS_KEY_ID
-        - name: AWS_SECRET_ACCESS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: aws-braket-credentials
-              key: AWS_SECRET_ACCESS_KEY
-        - name: AWS_DEFAULT_REGION
-          valueFrom:
-            secretKeyRef:
-              name: aws-braket-credentials
-              key: AWS_DEFAULT_REGION
-        - name: BRAKET_REGION
-          value: "us-east-1"
-      resources:
-        requests:
-          cpu: "200m"
-          memory: "512Mi"
-        limits:
-          cpu: "1000m"
-          memory: "2Gi"
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: qaoa-gang-worker-1
-  labels:
-    app: quantum-braket-gang
-    role: worker
-    fluence.flux-framework.org/group: qaoa-gang
-  annotations:
-    fluence.flux-framework.org/quantum-job-id: ""
-spec:
-  schedulerName: fluence
-  restartPolicy: Never
-  containers:
-    - name: gang
-      image: ghcr.io/converged-computing/quantum-braket-gang:latest
-      imagePullPolicy: Always
-      env:
-        - name: GANG_ROLE
-          value: "worker"
-        - name: RUN_ID
-          value: "manual-run"
-        - name: WORKER_INDEX
-          value: "1"
-        - name: N_WORKERS
-          value: "4"
-        - name: LEADER_TIMEOUT_S
-          value: "120"
-        - name: FLUENCE_QUANTUM_JOB_ID
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.annotations['fluence.flux-framework.org/quantum-job-id']
-        - name: AWS_ACCESS_KEY_ID
-          valueFrom:
-            secretKeyRef:
-              name: aws-braket-credentials
-              key: AWS_ACCESS_KEY_ID
-        - name: AWS_SECRET_ACCESS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: aws-braket-credentials
-              key: AWS_SECRET_ACCESS_KEY
-        - name: AWS_DEFAULT_REGION
-          valueFrom:
-            secretKeyRef:
-              name: aws-braket-credentials
-              key: AWS_DEFAULT_REGION
-        - name: BRAKET_REGION
-          value: "us-east-1"
-      resources:
-        requests:
-          cpu: "200m"
-          memory: "512Mi"
-        limits:
-          cpu: "1000m"
-          memory: "2Gi"
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: qaoa-gang-worker-2
-  labels:
-    app: quantum-braket-gang
-    role: worker
-    fluence.flux-framework.org/group: qaoa-gang
-  annotations:
-    fluence.flux-framework.org/quantum-job-id: ""
-spec:
-  schedulerName: fluence
-  restartPolicy: Never
-  containers:
-    - name: gang
-      image: ghcr.io/converged-computing/quantum-braket-gang:latest
-      imagePullPolicy: Always
-      env:
-        - name: GANG_ROLE
-          value: "worker"
-        - name: RUN_ID
-          value: "manual-run"
-        - name: WORKER_INDEX
-          value: "2"
-        - name: N_WORKERS
-          value: "4"
-        - name: LEADER_TIMEOUT_S
-          value: "120"
-        - name: FLUENCE_QUANTUM_JOB_ID
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.annotations['fluence.flux-framework.org/quantum-job-id']
-        - name: AWS_ACCESS_KEY_ID
-          valueFrom:
-            secretKeyRef:
-              name: aws-braket-credentials
-              key: AWS_ACCESS_KEY_ID
-        - name: AWS_SECRET_ACCESS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: aws-braket-credentials
-              key: AWS_SECRET_ACCESS_KEY
-        - name: AWS_DEFAULT_REGION
-          valueFrom:
-            secretKeyRef:
-              name: aws-braket-credentials
-              key: AWS_DEFAULT_REGION
-        - name: BRAKET_REGION
-          value: "us-east-1"
-      resources:
-        requests:
-          cpu: "200m"
-          memory: "512Mi"
-        limits:
-          cpu: "1000m"
-          memory: "2Gi"
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: qaoa-gang-worker-3
-  labels:
-    app: quantum-braket-gang
-    role: worker
-    fluence.flux-framework.org/group: qaoa-gang
-  annotations:
-    fluence.flux-framework.org/quantum-job-id: ""
-spec:
-  schedulerName: fluence
-  restartPolicy: Never
-  containers:
-    - name: gang
-      image: ghcr.io/converged-computing/quantum-braket-gang:latest
-      imagePullPolicy: Always
-      env:
-        - name: GANG_ROLE
-          value: "worker"
-        - name: RUN_ID
-          value: "manual-run"
-        - name: WORKER_INDEX
-          value: "3"
-        - name: N_WORKERS
-          value: "4"
-        - name: LEADER_TIMEOUT_S
-          value: "120"
-        - name: FLUENCE_QUANTUM_JOB_ID
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.annotations['fluence.flux-framework.org/quantum-job-id']
-        - name: AWS_ACCESS_KEY_ID
-          valueFrom:
-            secretKeyRef:
-              name: aws-braket-credentials
-              key: AWS_ACCESS_KEY_ID
-        - name: AWS_SECRET_ACCESS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: aws-braket-credentials
-              key: AWS_SECRET_ACCESS_KEY
-        - name: AWS_DEFAULT_REGION
-          valueFrom:
-            secretKeyRef:
-              name: aws-braket-credentials
-              key: AWS_DEFAULT_REGION
-        - name: BRAKET_REGION
-          value: "us-east-1"
-      resources:
-        requests:
-          cpu: "200m"
-          memory: "512Mi"
-        limits:
-          cpu: "1000m"
-          memory: "2Gi"
+  completionMode: Indexed
+  completions: 5                           # patched: N (1 producer + N-1 consumers)
+  parallelism: 5                           # patched: N
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: quantum-braket-gang
+        fluence.flux-framework.org/group: qaoa-gang   # patched: run name
+      annotations:
+        fluence.flux-framework.org/coordination: shared
+        fluence.flux-framework.org/group-size: "5"    # patched: N
+        fluence.flux-framework.org/require-backend: sv1  # patched: backend NAME
+        fluence.flux-framework.org/require-qrmi_type: braket-gate
+    spec:
+      schedulerName: fluence
+      restartPolicy: Never
+      containers:
+        - name: gang
+          image: ghcr.io/converged-computing/quantum-braket-gang:latest
+          imagePullPolicy: Always
+          env:
+            # No BRAKET_DEVICE: Fluence places the quantum work and injects
+            # FLUXION_ARN, which gang.py reads in preference. FLUENCE_COORDINATION_ROLE
+            # and (for consumers) FLUENCE_QUANTUM_JOB_ID are injected by the webhook.
+            - name: RUN_ID
+              value: "qaoa-gang"           # patched: unique per run
+            - name: N_CONSUMERS
+              value: "4"                   # patched: N-1
+            - name: N_SHOTS
+              value: "1000"                # patched
+            - name: N_NODES
+              value: "10"                  # patched
+            - name: K_REGULAR
+              value: "3"
+            - name: SEED
+              value: "42"                  # patched
+            - name: P_LAYERS
+              value: "1"
+            - name: POLL_TIMEOUT_S
+              value: "2592000"             # Braket result poll bound (30d) — QPU queues are long
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom: {secretKeyRef: {name: aws-braket-credentials, key: AWS_ACCESS_KEY_ID}}
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom: {secretKeyRef: {name: aws-braket-credentials, key: AWS_SECRET_ACCESS_KEY}}
+            - name: AWS_DEFAULT_REGION
+              valueFrom: {secretKeyRef: {name: aws-braket-credentials, key: AWS_DEFAULT_REGION}}
+          resources:
+            requests: {fluxion.flux-framework.org/qpu: "1", cpu: "200m", memory: "512Mi"}
+            limits:   {fluxion.flux-framework.org/qpu: "1", cpu: "1000m", memory: "2Gi"}

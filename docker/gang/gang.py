@@ -1,76 +1,75 @@
 #!/usr/bin/env python3
 """
-gang.py — Unified gang workflow container for Fluence quantum experiments.
+gang.py — Role-aware producer/consumer gang workload (Experiment 2).
 
-Role is determined by GANG_ROLE environment variable:
-  leader  — submits QAOA circuit, writes S3 leader-ready signal, aggregates
-  worker  — polls S3 for leader-ready, fetches result, processes shot partition
+A gang of N pods runs ONE quantum task and shares its result. Roles follow the
+Fluence coordination model:
 
-Environment variables (all roles):
-  GANG_ROLE          "leader" or "worker" (required)
-  AWS_ACCESS_KEY_ID  }
-  AWS_SECRET_ACCESS_KEY  } AWS credentials
-  AWS_DEFAULT_REGION }
-  S3_BUCKET          override default Braket result bucket
+  producer  builds the QAOA circuit, submits the ONE real QPU task, and publishes
+            the task id (so non-Fluence consumers can find it).
+  consumer  does NOT submit — it obtains the producer's task id, fetches the
+            SHARED result, and processes its shot partition.
 
-Leader-specific:
-  WORKSPACE          shared emptyDir from initContainers (default: /workspace)
-  BRAKET_DEVICE      device ARN, used in the DEFAULT (non-Fluence) condition where
-                     the pod selects its own device and Fluence does not place it
-  FLUXION_ARN        device ARN injected by Fluence when it PLACES the quantum
-                     resource (takes precedence over BRAKET_DEVICE); the matched
-                     backend NAME arrives separately as FLUXION_BACKEND
-  N_SHOTS            shots per task (default: 1000)
-  N_WORKERS          number of worker pods to wait for (default: 4)
-  WORKER_TIMEOUT_S   seconds to wait for all workers (default: 600)
+ROLE comes from FLUENCE_COORDINATION_ROLE (producer|consumer):
+  - Fluence arm:  the webhook injects it (index 0 -> producer, rest -> consumer).
+  - default arm:  the manifest sets it explicitly (no Fluence to inject it).
+Unset is treated as producer (a lone/standalone submit).
 
-Worker-specific:
-  WORKER_INDEX       this worker's index 0-based (default: 0)
-  N_WORKERS          total number of workers (default: 4)
-  LEADER_TIMEOUT_S   seconds to wait for leader-ready signal (default: 600)
-  FLUENCE_QUANTUM_JOB_ID  vendor-neutral job id injected by the Fluence sidecar
-                     via the quantum-job-id annotation / downward API
-                     (optional — discovered from S3 if not set)
+TASK-ID HAND-OFF:
+  - Fluence arm:  the ungating sidecar stamps the producer's task id and the
+                  webhook surfaces it as FLUENCE_QUANTUM_JOB_ID; the consumer is
+                  GATED until the QPU task is at queue position ~1, so it holds no
+                  classical node during the queue wait.
+  - default arm:  there is no Fluence, so the producer PUBLISHES its task id to S3
+                  and consumers POLL for it. They start immediately with the
+                  producer and idle (burning classical node-time) until the result
+                  is ready. That wasted idle is exactly what Fluence reclaims.
 
-S3 coordination paths (derived from task_id):
-  fluence-gang/<task_id>/leader-ready     written by leader when QPU done
-  fluence-gang/<task_id>/worker-<i>.json  written by each worker
-  fluence-gang/<task_id>/final.json       written by leader after aggregation
+DEVICE selection is annotation-driven in the Fluence arm: the producer requests
+the qpu resource and Fluence injects the matched device as FLUXION_ARN. The
+default arm has no Fluence, so it names the device manually via BRAKET_DEVICE.
+
+Environment:
+  FLUENCE_COORDINATION_ROLE  producer | consumer (see above)
+  FLUENCE_QUANTUM_JOB_ID     producer's task ARN, injected by the sidecar (Fluence
+                             consumers only; absent => discover via S3)
+  FLUXION_ARN / FLUXION_BACKEND   device ARN / name injected by Fluence (producer)
+  BRAKET_DEVICE              device ARN for the non-Fluence (default) arm
+  RUN_ID                     unique per run; scopes the S3 hand-off prefix
+  N_CONSUMERS                number of consumers (N-1)
+  CONSUMER_INDEX             this consumer's index (default: JOB_COMPLETION_INDEX)
+  N_SHOTS, N_NODES, K_REGULAR, SEED, P_LAYERS   problem definition
+  AWS_*                      Braket credentials; BRAKET_REGION optional region hint
+
+Logs TIMING <key>=<epoch> lines the orchestrator parses, and one SUMMARY <json>.
 """
 
 import json
+import math
 import os
+import random
 import sys
 import time
 from datetime import datetime, timezone
 
 import boto3
 
-
-# ── S3 key helpers ─────────────────────────────────────────────────────────────
-
-def _run_prefix():
-    # Per-run S3 prefix so a run's pods can never match a previous run's
-    # objects. RUN_ID is injected by the orchestrator (unique per run); falls
-    # back to a stable default only for ad-hoc single runs.
-    return f"fluence-gang/{os.environ.get('RUN_ID', 'default')}"
-
-def key_leader_ready(task_id):
-    return f"{_run_prefix()}/leader-ready"
-
-def key_worker(task_id, worker_index):
-    return f"{_run_prefix()}/worker-{worker_index}.json"
-
-def key_final(task_id):
-    return f"{_run_prefix()}/final.json"
-
-
-# ── Shared helpers ─────────────────────────────────────────────────────────────
-
 SV1_ARN = "arn:aws:braket:::device/quantum-simulator/amazon/sv1"
+
 
 def log(role, msg):
     print(f"[gang-{role}] {msg}", flush=True)
+
+
+# ── S3 hand-off (default / non-Fluence arm only) ─────────────────────────────────
+
+def _run_prefix():
+    # Per-run prefix so a run's pods never match a previous run's objects.
+    return f"fluence-gang/{os.environ.get('RUN_ID', 'default')}"
+
+
+def key_producer_task():
+    return f"{_run_prefix()}/producer-task.json"
 
 
 def get_s3_bucket(s3, sts, region):
@@ -81,17 +80,50 @@ def get_s3_bucket(s3, sts, region):
     return bucket
 
 
-def compute_maxcut_cost(counts, edges, n_qubits):
-    total_shots = sum(counts.values())
-    if total_shots == 0:
-        return 0.0
-    total_cost = 0.0
-    for bitstring, shots in counts.items():
-        bs = bitstring.zfill(n_qubits)
-        bits = [int(b) for b in bs]
-        cut_value = sum(w for u, v, w in edges if bits[u] != bits[v])
-        total_cost += shots * cut_value
-    return total_cost / total_shots
+def resolve_region(arn=None):
+    arn = arn or os.environ.get("FLUXION_ARN") or os.environ.get("BRAKET_DEVICE", "")
+    parts = arn.split(":")
+    if len(parts) > 3 and parts[3]:
+        return parts[3]
+    return (os.environ.get("FLUXION_REGION")
+            or os.environ.get("BRAKET_REGION")
+            or os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
+
+
+# ── problem + circuit (self-contained; identical to the sampler) ─────────────────
+
+def build_problem():
+    n_nodes = int(os.environ.get("N_NODES", 10))
+    k = int(os.environ.get("K_REGULAR", 3))
+    seed = int(os.environ.get("SEED", 42))
+    p = int(os.environ.get("P_LAYERS", 1))
+    if n_nodes * k % 2 != 0:
+        raise ValueError(f"n*k must be even (n={n_nodes}, k={k})")
+    if k >= n_nodes:
+        raise ValueError(f"k must be < n (k={k}, n={n_nodes})")
+    rng = random.Random(seed)
+    edges = None
+    for _ in range(100):
+        stubs = []
+        for node in range(n_nodes):
+            stubs.extend([node] * k)
+        rng.shuffle(stubs)
+        es, valid = set(), True
+        for i in range(0, len(stubs), 2):
+            u, v = stubs[i], stubs[i + 1]
+            if u == v or (min(u, v), max(u, v)) in es:
+                valid = False
+                break
+            es.add((min(u, v), max(u, v)))
+        if valid:
+            edges = [(u, v, 1.0) for u, v in sorted(es)]
+            break
+    if edges is None:
+        raise RuntimeError(f"could not build a {k}-regular graph on {n_nodes} nodes")
+    prng = random.Random(seed)
+    gammas = [prng.uniform(0.1, math.pi - 0.1) for _ in range(p)]
+    betas = [prng.uniform(0.1, math.pi / 2 - 0.1) for _ in range(p)]
+    return n_nodes, edges, gammas, betas
 
 
 def build_circuit(n_qubits, edges, gammas, betas):
@@ -110,320 +142,221 @@ def build_circuit(n_qubits, edges, gammas, betas):
     return circ
 
 
-# ── Leader ─────────────────────────────────────────────────────────────────────
+def compute_maxcut_cost(counts, edges, n_qubits):
+    total_shots = sum(counts.values())
+    if total_shots == 0:
+        return 0.0
+    total = 0.0
+    for bitstring, shots in counts.items():
+        bits = [int(b) for b in bitstring.zfill(n_qubits)]
+        cut = sum(w for u, v, w in edges if bits[u] != bits[v])
+        total += shots * cut
+    return total / total_shots
 
-def run_leader():
-    workspace      = os.environ.get("WORKSPACE", "/workspace")
-    # Fluence injects the matched backend as FLUXION_BACKEND (the backend NAME,
-    # e.g. "sv1") and its attributes as FLUXION_<KEY>. The device ARN comes from
-    # the graph's `arn` attribute, injected as FLUXION_ARN — that is what the
-    # Braket SDK needs. In the DEFAULT (non-Fluence) condition no FLUXION_* env is
-    # injected and the pod uses its own BRAKET_DEVICE.
-    device_arn     = os.environ.get("FLUXION_ARN") or \
-                     os.environ.get("BRAKET_DEVICE", SV1_ARN)
-    placed_by_fluence = bool(os.environ.get("FLUXION_ARN"))
-    n_shots        = int(os.environ.get("N_SHOTS", 1000))
-    n_workers      = int(os.environ.get("N_WORKERS", 4))
-    worker_timeout = int(os.environ.get("WORKER_TIMEOUT_S", 600))
+
+def _aws_session(region):
+    from braket.aws import AwsSession
+    return AwsSession(boto_session=boto3.Session(region_name=region))
+
+
+# ── producer ─────────────────────────────────────────────────────────────────────
+
+def run_producer():
+    lg = lambda m: log("producer", m)
+    n_shots = int(os.environ.get("N_SHOTS", 1000))
+    n_consumers = int(os.environ.get("N_CONSUMERS", 4))
+    device_arn = os.environ.get("FLUXION_ARN") or os.environ.get("BRAKET_DEVICE", SV1_ARN)
+    backend_name = os.environ.get("FLUXION_BACKEND", "")
+    region = resolve_region(device_arn)
 
     t_start = time.time()
-    lg = lambda msg: log("leader", msg)
+    lg(f"TIMING producer_start_ts={t_start:.6f}")
+    if backend_name:
+        lg(f"FLUXION_BACKEND={backend_name}")
+    lg(f"device={device_arn} region={region} n_shots={n_shots} n_consumers={n_consumers}")
 
-    lg(f"device={device_arn} n_shots={n_shots} n_workers={n_workers}")
-    lg(f"TIMING leader_start_ts={t_start:.6f}")
-
-    # Load problem and params from initContainers
-    with open(f"{workspace}/problem.json") as f:
-        problem = json.load(f)
-    with open(f"{workspace}/params.json") as f:
-        params = json.load(f)
-
-    n_qubits = problem["n_qubits"]
-    edges    = problem["edges"]
-    gammas   = params["gammas"]
-    betas    = params["betas"]
-    lg(f"Problem: n_qubits={n_qubits} edges={len(edges)}")
-
-    # Build and submit circuit
+    n_qubits, edges, gammas, betas = build_problem()
     from braket.aws import AwsDevice
-    circ   = build_circuit(n_qubits, edges, gammas, betas)
+    session = _aws_session(region)
+    device = AwsDevice(device_arn, aws_session=session)
+    circ = build_circuit(n_qubits, edges, gammas, betas)
+
     t_submit = time.time()
     lg(f"TIMING submit_ts={t_submit:.6f}")
-    device = AwsDevice(device_arn)
-    task   = device.run(circ, shots=n_shots)
-    t_queued = time.time()
-    lg(f"TIMING queued_ts={t_queued:.6f}")
-    lg(f"Task ARN: {task.id}")
+    # QPU vendor queues can be hours-to-days, so the Braket result poll must be
+    # very long (POLL_TIMEOUT_S, default 30d) or .result() would give up mid-queue.
+    poll_timeout = int(os.environ.get("POLL_TIMEOUT_S", 2592000))
+    task = device.run(circ, shots=n_shots, poll_timeout_seconds=poll_timeout)
+    task_arn = task.id
+    lg(f"submitted task {task_arn}")
+
+    # Publish the task id for non-Fluence (default-arm) consumers to discover.
+    # In the Fluence arm consumers receive it via FLUENCE_QUANTUM_JOB_ID and never
+    # read this; the publish is best-effort so a missing S3 bucket can't fail the
+    # Fluence run.
+    try:
+        s3 = boto3.client("s3", region_name=region)
+        sts = boto3.client("sts", region_name=region)
+        bucket = get_s3_bucket(s3, sts, region)
+        body = json.dumps({"task_arn": task_arn, "n_qubits": n_qubits,
+                           "n_consumers": n_consumers, "region": region})
+        s3.put_object(Bucket=bucket, Key=key_producer_task(), Body=body.encode())
+        lg(f"published task id -> s3://{bucket}/{key_producer_task()}")
+    except Exception as e:
+        lg(f"WARNING: could not publish task id to S3 "
+           f"(Fluence-arm consumers don't need it): {e}")
 
     result = task.result()
     t_result = time.time()
     lg(f"TIMING result_ts={t_result:.6f}")
+    cost = compute_maxcut_cost(result.measurement_counts, edges, n_qubits)
+    t_done = time.time()
+    lg(f"TIMING done_ts={t_done:.6f}")
 
-    if result is None:
-        lg(f"ERROR: task {task.id} returned no result (state={task.state()})")
-        sys.exit(1)
-
-    counts = result.measurement_counts
-    cost   = compute_maxcut_cost(counts, edges, n_qubits)
-    lg(f"Cost={cost:.6f} elapsed={t_result-t_submit:.2f}s")
-
-    task_id = task.id.split("/")[-1]
-    region  = os.environ.get("BRAKET_REGION") or \
-              device_arn.split(":")[3] or \
-              os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
-    if not region:
-        region = "us-east-1"
-
-    s3  = boto3.client("s3", region_name=region)
-    sts = boto3.client("sts", region_name=region)
-    s3_bucket = get_s3_bucket(s3, sts, region)
-    lg(f"S3 bucket: {s3_bucket}  task_id: {task_id}")
-
-    # Write leader-ready signal — includes task ARN for workers without Fluence
-    ready = {
-        "task_arn":  task.id,
-        "task_id":   task_id,
-        "s3_bucket": s3_bucket,
-        "n_shots":   n_shots,
-        "n_qubits":  n_qubits,
-        "n_workers": n_workers,
+    summary = {
+        "task_id": task_arn.split("/")[-1],
+        "backend": backend_name or device_arn,
+        "device_arn": device_arn,
+        "role": "producer",
+        "n_qubits": n_qubits,
+        "n_shots": n_shots,
+        "n_consumers": n_consumers,
+        "maxcut_cost": cost,
+        "queue_wait_s": t_result - t_submit,
+        "total_elapsed_s": t_done - t_start,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-    s3.put_object(Bucket=s3_bucket, Key=key_leader_ready(task_id),
-                  Body=json.dumps(ready).encode())
-    lg(f"Wrote leader-ready: s3://{s3_bucket}/{key_leader_ready(task_id)}")
-    lg(f"TIMING leader_ready_ts={time.time():.6f}")
-
-    # Wait for worker partial results
-    lg(f"Waiting for {n_workers} workers (timeout={worker_timeout}s)...")
-    deadline = time.time() + worker_timeout
-    received = set()
-    while len(received) < n_workers and time.time() < deadline:
-        for i in range(n_workers):
-            if i in received:
-                continue
-            try:
-                s3.head_object(Bucket=s3_bucket, Key=key_worker(task_id, i))
-                received.add(i)
-                lg(f"  worker {i} done ({len(received)}/{n_workers})")
-            except Exception:
-                pass
-        if len(received) < n_workers:
-            time.sleep(5)
-
-    t_workers_done = time.time()
-    lg(f"TIMING workers_done_ts={t_workers_done:.6f}")
-    lg(f"Workers completed: {len(received)}/{n_workers}")
-
-    # Aggregate
-    merged = {}
-    for i in range(n_workers):
-        try:
-            obj = s3.get_object(Bucket=s3_bucket, Key=key_worker(task_id, i))
-            pr  = json.loads(obj["Body"].read())
-            for bs, cnt in pr.get("counts", {}).items():
-                merged[bs] = merged.get(bs, 0) + cnt
-        except Exception as e:
-            lg(f"  WARNING: could not read worker {i}: {e}")
-
-    merged_cost = compute_maxcut_cost(merged, edges, n_qubits) if merged else cost
-    best_bs = max(merged or counts, key=(merged or counts).get)
-
-    t_end = time.time()
-    final = {
-        "task_arn":           task.id,
-        "task_id":            task_id,
-        "backend":            device_arn,
-        "n_qubits":           n_qubits,
-        "n_shots":            n_shots,
-        "n_workers":          n_workers,
-        "workers_completed":  len(received),
-        "cost_leader":        cost,
-        "cost_aggregated":    merged_cost,
-        "best_bitstring":     best_bs,
-        "qpu_queue_wait_s":   t_result - t_queued,
-        "leader_elapsed_s":   t_end - t_start,
-        "worker_wait_s":      t_workers_done - t_result,
-        "timestamp":          datetime.now(timezone.utc).isoformat(),
-    }
-    s3.put_object(Bucket=s3_bucket, Key=key_final(task_id),
-                  Body=json.dumps(final, indent=2).encode())
-
-    with open(f"{workspace}/final.json", "w") as f:
-        json.dump(final, f, indent=2)
-
-    lg(f"SUMMARY {json.dumps({'task_id': task_id, 'cost': merged_cost, 'workers_completed': len(received), 'total_elapsed_s': t_end-t_start, 'qpu_queue_wait_s': final['qpu_queue_wait_s']})}")
-    lg(f"Done in {t_end-t_start:.1f}s")
+    lg(f"SUMMARY {json.dumps(summary)}")
+    lg(f"Done (producer) in {t_done - t_start:.1f}s "
+       f"(task {summary['task_id']}, maxcut {cost:.4f})")
 
 
-# ── Worker ─────────────────────────────────────────────────────────────────────
+# ── consumer ─────────────────────────────────────────────────────────────────────
 
-def run_worker():
-    # Fluence injects the (vendor-neutral) job id as FLUENCE_QUANTUM_JOB_ID via
-    # the quantum-job-id annotation at ungate time. For Braket the job id is the
-    # task ARN. Without Fluence the worker discovers the task from S3 instead.
-    task_arn       = os.environ.get("FLUENCE_QUANTUM_JOB_ID", "")
-    worker_index   = int(os.environ.get("WORKER_INDEX", 0))
-    n_workers      = int(os.environ.get("N_WORKERS", 4))
-    leader_timeout = int(os.environ.get("LEADER_TIMEOUT_S", 600))
-
-    t_start = time.time()
-    lg = lambda msg: log(f"worker-{worker_index}", msg)
-
-    lg(f"task_arn={'set' if task_arn else 'not set (will discover)'} "
-       f"index={worker_index}/{n_workers}")
-    lg(f"TIMING worker_start_ts={t_start:.6f}")
-
-    # Region of the result bucket. Prefer BRAKET_REGION (set per-run by the
-    # orchestrator from the device ARN, on every pod) so leader and workers agree
-    # even for cross-region devices; fall back to the device ARN, then env.
-    device_arn = os.environ.get("FLUXION_ARN") or \
-                 os.environ.get("BRAKET_DEVICE", SV1_ARN)
-    region = os.environ.get("BRAKET_REGION") or \
-             device_arn.split(":")[3] or \
-             os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
-    if not region:
-        region = "us-east-1"
-    s3  = boto3.client("s3", region_name=region)
+def poll_s3_for_task(region, timeout, lg):
+    s3 = boto3.client("s3", region_name=region)
     sts = boto3.client("sts", region_name=region)
-    s3_bucket = get_s3_bucket(s3, sts, region)
-
-    # Poll for the leader-ready signal at this run's deterministic key. Because
-    # the key is scoped to RUN_ID, the worker can only ever see THIS run's
-    # leader — never a stale object from a previous run (which previously caused
-    # workers to "complete" instantly and report zero idle time).
-    lg(f"Waiting for leader-ready (timeout={leader_timeout}s)...")
-    lg(f"  key=s3://{s3_bucket}/{key_leader_ready(None)}")
-    deadline = time.time() + leader_timeout
-    leader_info = None
-    wait_start = time.time()
-    next_heartbeat = wait_start + 60
-
-    while time.time() < deadline:
+    bucket = get_s3_bucket(s3, sts, region)
+    key = key_producer_task()
+    infinite = timeout <= 0
+    lg(f"polling s3://{bucket}/{key} for the producer's task id "
+       f"(timeout={'infinite' if infinite else str(timeout) + 's'})")
+    deadline = None if infinite else time.time() + timeout
+    waited = 0
+    while infinite or time.time() < deadline:
         try:
-            obj = s3.get_object(Bucket=s3_bucket, Key=key_leader_ready(None))
-            leader_info = json.loads(obj["Body"].read())
-            break
+            obj = s3.get_object(Bucket=bucket, Key=key)
+            info = json.loads(obj["Body"].read())
+            return info["task_arn"], info.get("region", region)
         except s3.exceptions.NoSuchKey:
             pass
         except Exception as e:
-            if "NoSuchKey" not in str(e) and "Not Found" not in str(e):
-                lg(f"  poll error: {e}")
-        # Heartbeat: on a queued QPU the leader can legitimately be in the vendor
-        # queue for a long time. Log progress so a long (correct) wait is not
-        # mistaken for a hang.
-        if time.time() >= next_heartbeat:
-            waited = int(time.time() - wait_start)
-            lg(f"  still waiting for leader-ready ({waited}s elapsed, "
-               f"{int(deadline - time.time())}s remaining)")
-            next_heartbeat += 60
+            lg(f"  poll error (retry): {e}")
         time.sleep(5)
+        waited += 5
+        if waited % 60 == 0:
+            lg(f"  still waiting for the producer's task id ({waited}s elapsed)")
+    return None, region
 
-    if leader_info is None:
-        lg(f"ERROR: leader-ready not found within timeout ({leader_timeout}s) — "
-           f"the leader may have failed, or the QPU queue exceeded the timeout; "
-           f"raise LEADER_TIMEOUT_S if the queue wait is expected to be longer")
-        sys.exit(1)
 
-    t_ready = time.time()
-    task_arn = leader_info["task_arn"]
-    task_id  = task_arn.split("/")[-1]
-    lg(f"Leader ready. task_id={task_id}")
-    lg(f"TIMING leader_ready_seen_ts={t_ready:.6f}")
+def run_consumer():
+    idx = os.environ.get("CONSUMER_INDEX") or os.environ.get("JOB_COMPLETION_INDEX", "0")
+    lg = lambda m: log(f"consumer-{idx}", m)
+    n_consumers = int(os.environ.get("N_CONSUMERS", 4))
+    timeout = int(os.environ.get("CONSUMER_TIMEOUT_S", 0))  # <=0 => wait indefinitely
+    region = resolve_region()
 
-    n_qubits = leader_info["n_qubits"]
+    t_start = time.time()
+    lg(f"TIMING consumer_start_ts={t_start:.6f}")
 
-    # Fetch result
-    import asyncio
-    asyncio.set_event_loop(asyncio.new_event_loop())
+    # Obtain the producer's task id. Fluence hands it over directly (the consumer
+    # was gated until ~now); without Fluence we discover it from the producer's S3
+    # publish, idling here until it appears.
+    task_arn = os.environ.get("FLUENCE_QUANTUM_JOB_ID", "").strip()
+    if task_arn:
+        lg(f"got task id from FLUENCE_QUANTUM_JOB_ID: {task_arn}")
+        region = resolve_region(task_arn)
+    else:
+        lg("no FLUENCE_QUANTUM_JOB_ID (non-Fluence run) — discovering via S3")
+        task_arn, region = poll_s3_for_task(region, timeout, lg)
+        if not task_arn:
+            lg("ERROR: producer task id not found within timeout — "
+               "the producer may have failed or the QPU queue exceeded the timeout")
+            sys.exit(1)
+    t_got_id = time.time()
+    lg(f"TIMING got_id_ts={t_got_id:.6f}")
+
     from braket.aws import AwsQuantumTask
-    result = AwsQuantumTask(arn=task_arn).result()
+    session = _aws_session(region)
+    poll_timeout = int(os.environ.get("POLL_TIMEOUT_S", 2592000))
+    result = AwsQuantumTask(arn=task_arn, aws_session=session,
+                            poll_timeout_seconds=poll_timeout).result()
+    t_result_ready = time.time()
+    lg(f"TIMING result_ready_ts={t_result_ready:.6f}")
     if result is None:
-        lg("ERROR: task result is None")
+        lg(f"ERROR: shared task {task_arn} returned no result")
         sys.exit(1)
 
-    t_fetched = time.time()
-    lg(f"TIMING result_fetched_ts={t_fetched:.6f}")
-
-    # Partition shots: worker i takes every n_workers-th shot
-    all_shots = []
-    for bs, cnt in result.measurement_counts.items():
-        all_shots.extend([bs] * cnt)
-    my_shots = all_shots[worker_index::n_workers]
+    # Process this consumer's shot partition of the SHARED result.
+    n_qubits, edges, _, _ = build_problem()
+    counts = result.measurement_counts
+    shots = []
+    for bitstring, c in counts.items():
+        shots.extend([bitstring] * c)
+    my_shots = shots[int(idx)::n_consumers] if n_consumers > 0 else shots
     my_counts = {}
-    for bs in my_shots:
-        my_counts[bs] = my_counts.get(bs, 0) + 1
+    for b in my_shots:
+        my_counts[b] = my_counts.get(b, 0) + 1
+    partition_cost = compute_maxcut_cost(my_counts, edges, n_qubits)
+    t_done = time.time()
+    lg(f"TIMING done_ts={t_done:.6f}")
 
-    lg(f"Shot partition: {len(my_shots)}/{len(all_shots)}")
-
-    t_processed = time.time()
-    lg(f"TIMING processing_done_ts={t_processed:.6f}")
-
-    partial = {
-        "worker_index":      worker_index,
-        "n_workers":         n_workers,
-        "task_arn":          task_arn,
-        "task_id":           task_id,
-        "shots_total":       len(all_shots),
-        "shots_assigned":    len(my_shots),
-        "counts":            my_counts,
-        "worker_start_ts":   t_start,
-        "leader_ready_ts":   t_ready,
-        "fetch_elapsed_s":   t_fetched - t_ready,
-        "process_elapsed_s": t_processed - t_fetched,
-        "idle_before_ready_s": t_ready - t_start,
-        "timestamp":         datetime.now(timezone.utc).isoformat(),
+    idle_s = t_result_ready - t_start  # node held without the result this long
+    summary = {
+        "task_id": task_arn.split("/")[-1],
+        "role": "consumer",
+        "consumer_index": int(idx),
+        "n_qubits": n_qubits,
+        "partition_shots": len(my_shots),
+        "partition_maxcut_cost": partition_cost,
+        "idle_s": idle_s,
+        "total_elapsed_s": t_done - t_start,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-    s3.put_object(Bucket=s3_bucket, Key=key_worker(task_id, worker_index),
-                  Body=json.dumps(partial, indent=2).encode())
-
-    t_end = time.time()
-    lg(f"TIMING worker_done_ts={t_end:.6f}")
-    lg(f"Done in {t_end-t_start:.1f}s "
-       f"(idle={t_ready-t_start:.1f}s "
-       f"fetch={t_fetched-t_ready:.1f}s "
-       f"process={t_processed-t_fetched:.1f}s)")
+    lg(f"SUMMARY {json.dumps(summary)}")
+    lg(f"Done (consumer-{idx}) in {t_done - t_start:.1f}s "
+       f"(idle {idle_s:.1f}s, {len(my_shots)} shots, partition maxcut {partition_cost:.4f})")
 
 
-# ── Entrypoint ─────────────────────────────────────────────────────────────────
+# ── main ───────────────────────────────────────────────────────────────────────
+
+def main():
+    role = os.environ.get("FLUENCE_COORDINATION_ROLE", "").strip().lower()
+    # Fluence injects the role in the fluence arm. In the default (non-Fluence)
+    # arm nothing injects it, so fall back to the Job completion index: index 0 is
+    # the producer, every other index is a consumer. (Both arms are indexed Jobs.)
+    if not role:
+        idx = os.environ.get("JOB_COMPLETION_INDEX")
+        if idx is not None:
+            role = "producer" if idx == "0" else "consumer"
+    print(f"[gang] role={role or '(unset -> producer)'} "
+          f"(FLUENCE_COORDINATION_ROLE={os.environ.get('FLUENCE_COORDINATION_ROLE')!r} "
+          f"JOB_COMPLETION_INDEX={os.environ.get('JOB_COMPLETION_INDEX')!r})",
+          flush=True)
+    if role == "consumer":
+        run_consumer()
+    elif role in ("producer", ""):
+        if not role:
+            print("[gang] WARNING: no role and no completion index — defaulting to "
+                  "producer. In a gang every pod must have a role (the Fluence webhook "
+                  "injects it; the default arm derives it from the completion index).",
+                  flush=True)
+        run_producer()
+    else:
+        print(f"ERROR: role must be 'producer' or 'consumer', got {role!r}",
+              file=sys.stderr)
+        sys.exit(1)
+
 
 if __name__ == "__main__":
-    # Role is DISCOVERED from the environment, so one identical container image
-    # runs as either leader or worker. Precedence (works with BOTH old and new
-    # experiments):
-    #   1. FLUENCE_ROLE  — injected by the Fluence webhook from the
-    #      fluence.flux-framework.org/role annotation (new single-spec gangs).
-    #   2. GANG_ROLE     — set explicitly in the manifest (older experiments,
-    #      and the default-scheduler baseline arm that bypasses the webhook).
-    #   3. "worker"      — last-resort default.
-    # FLUENCE_ROLE wins when both are present, so Fluence's decision is
-    # authoritative.
-    fluence_role = os.environ.get("FLUENCE_ROLE")
-    gang_role = os.environ.get("GANG_ROLE")
-    role = (fluence_role or gang_role or "worker").lower()
-
-    source = ("FLUENCE_ROLE" if fluence_role else
-              "GANG_ROLE" if gang_role else
-              "default(worker)")
-    print(f"[gang] role={role} (from {source}; "
-          f"FLUENCE_ROLE={fluence_role!r} GANG_ROLE={gang_role!r})", flush=True)
-
-    # Silent-failure guard: if NEITHER signal is set we default to worker, which
-    # makes a would-be leader hang forever waiting for a leader-ready signal that
-    # nobody writes. Warn loudly so this misconfiguration is obvious in the logs
-    # (the usual cause: a Fluence-role manifest running against a webhook build
-    # that does not yet inject FLUENCE_ROLE — rebuild/redeploy Fluence).
-    if not fluence_role and not gang_role:
-        print("[gang] WARNING: no role signal (FLUENCE_ROLE/GANG_ROLE both unset) "
-              "— defaulting to worker. If this pod was meant to be the leader, the "
-              "Fluence webhook is not injecting FLUENCE_ROLE (rebuild/redeploy "
-              "Fluence) or the manifest is missing GANG_ROLE.", flush=True)
-
-    if role == "leader":
-        run_leader()
-    elif role == "worker":
-        run_worker()
-    else:
-        print(f"ERROR: role must be 'leader' or 'worker' (from FLUENCE_ROLE or "
-              f"GANG_ROLE), got '{role}'")
-        sys.exit(1)
+    main()

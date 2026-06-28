@@ -1,0 +1,7 @@
+scheduler,backend,n_pods,n_consumers,n_repeats,idle_mean_s,idle_stdev_s
+default,rigetti_cepheus,3,2,5,21.871,5.57
+default,rigetti_cepheus,5,4,5,56.414,1.453
+default,rigetti_cepheus,9,8,5,95.722,19.888
+fluence,rigetti_cepheus,3,2,5,6.663,0.613
+fluence,rigetti_cepheus,5,4,5,17.172,0.495
+fluence,rigetti_cepheus,9,8,5,64.073,1.375

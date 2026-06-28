@@ -1,2 +1,0 @@
-run_name,backend,scheduler,n_workers,n_nodes,n_shots,seed,batch_wall_s,leader_wall_s,qpu_queue_wait_s,leader_submit_to_result_s,total_worker_idle_s,avg_worker_idle_s,worker_node_seconds,n_workers_completed,leader_failed,cost_aggregated,workers_completed,timestamp,worker_0_idle_s,worker_1_idle_s,worker_2_idle_s,worker_3_idle_s
-gang-tn1-default-w4-q10,tn1,default,4,10,1000,42,44.404,35.0,15.523,17.13,111.064,27.766,111.064,4,False,,4,2026-06-23T19:53:39.400394+00:00,27.743,27.838,27.667,27.816

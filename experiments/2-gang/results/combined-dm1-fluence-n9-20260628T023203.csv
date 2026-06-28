@@ -1,0 +1,2 @@
+run_name,scheduler,backend,n_pods,n_consumers,n_shots,n_nodes,seed,job_ok,batch_wall_s,total_consumer_idle_s,mean_consumer_idle_s,qpu_queue_wait_s,n_consumers_observed,timestamp
+gang-dm1-fluence-n9-q10,fluence,dm1,9,8,1000,10,42,True,64.953,65.021,8.128,3.579,8,2026-06-28T02:32:03.289924+00:00

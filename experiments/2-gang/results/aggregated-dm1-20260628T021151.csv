@@ -1,0 +1,7 @@
+scheduler,backend,n_pods,n_consumers,n_repeats,idle_mean_s,idle_stdev_s
+default,dm1,3,2,5,17.362,0.417
+default,dm1,5,4,5,34.476,0.168
+default,dm1,9,8,5,74.207,0.954
+fluence,dm1,3,2,5,6.265,0.119
+fluence,dm1,5,4,5,16.902,0.3
+fluence,dm1,9,8,5,62.795,1.276

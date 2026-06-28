@@ -1,0 +1,2 @@
+run_name,scheduler,backend,n_pods,n_consumers,n_shots,n_nodes,seed,job_ok,batch_wall_s,total_consumer_idle_s,mean_consumer_idle_s,qpu_queue_wait_s,n_consumers_observed,timestamp
+gang-rigetti-cepheus-fluence-n3-q10,fluence,rigetti_cepheus,3,2,100,10,42,True,53.899,6.421,3.211,3.731,2,2026-06-28T04:45:32.065299+00:00

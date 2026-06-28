@@ -1,2 +1,0 @@
-run_name,backend,scheduler,n_workers,n_nodes,n_shots,seed,batch_wall_s,leader_wall_s,qpu_queue_wait_s,leader_submit_to_result_s,total_worker_idle_s,avg_worker_idle_s,worker_node_seconds,n_workers_completed,leader_failed,cost_aggregated,workers_completed,timestamp,worker_0_idle_s,worker_1_idle_s
-gang-dm1-fluence-w2-q10,dm1,fluence,2,10,1000,42,44.018,34.0,2.857,5.504,3.965,1.982,3.965,2,False,,2,2026-06-23T19:11:21.230868+00:00,1.93,2.034

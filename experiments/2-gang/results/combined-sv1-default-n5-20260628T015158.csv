@@ -1,0 +1,2 @@
+run_name,scheduler,backend,n_pods,n_consumers,n_shots,n_nodes,seed,job_ok,batch_wall_s,total_consumer_idle_s,mean_consumer_idle_s,qpu_queue_wait_s,n_consumers_observed,timestamp
+gang-sv1-default-n5-q10,default,sv1,5,4,1000,10,42,True,22.643,34.676,8.669,2.947,4,2026-06-28T01:51:58.144293+00:00
