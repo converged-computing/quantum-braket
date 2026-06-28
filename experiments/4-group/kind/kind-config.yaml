@@ -1,0 +1,33 @@
+# kind cluster for the Fluence + Flux Operator gang experiments (plumbing /
+# functional environment — NOT for performance numbers; kind is one host).
+#
+# Mirrors fluence's own deploy/kind-config.yaml: enables the alpha
+# Workload/PodGroup gang API (off by default in 1.36). Gates are per-component
+# because GangScheduling is scheduler-only. extraArgs uses the kubeadm v1beta4
+# list form ({name,value}); the old map form is silently dropped on 1.36.
+#
+# Create with:
+#   kind create cluster --image kindest/node:v1.36.1 --config kind-config.yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: ClusterConfiguration
+        apiServer:
+          extraArgs:
+            - name: runtime-config
+              value: "scheduling.k8s.io/v1alpha2=true"
+            - name: feature-gates
+              value: "GenericWorkload=true"
+        scheduler:
+          extraArgs:
+            - name: feature-gates
+              value: "GenericWorkload=true,GangScheduling=true"
+        controllerManager:
+          extraArgs:
+            - name: feature-gates
+              value: "GenericWorkload=true"
+  - role: worker
+  - role: worker

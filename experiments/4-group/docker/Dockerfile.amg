@@ -1,0 +1,17 @@
+# AMG (LLNL) built against Amazon EFA Open MPI.
+# 2022 used LLNL/AMG branch 1.2, plain `make` (the Makefile uses mpicc).
+# Run at 16 ranks, weak scaling: amg -P 4 2 2 -n 128 128 128
+ARG BASE=ghcr.io/converged-computing/efa-openmpi-base:jammy
+FROM ${BASE}
+
+# AMG's Makefile picks up the MPI compiler from PATH (mpicc -> /opt/amazon/openmpi).
+RUN git clone --single-branch --branch 1.2 https://github.com/LLNL/AMG.git /opt/AMG \
+    && cd /opt/AMG \
+    && make CC=mpicc -j"$(nproc)" \
+    && test -x test/amg \
+    && cp test/amg /usr/local/bin/amg
+
+WORKDIR /opt/AMG
+# sanity: linked against the EFA Open MPI
+RUN ldd /usr/local/bin/amg | grep -i "openmpi\|mpi" || true
+CMD ["amg", "-P", "4", "2", "2", "-n", "128", "128", "128"]

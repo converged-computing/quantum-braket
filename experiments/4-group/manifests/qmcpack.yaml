@@ -1,0 +1,29 @@
+# QMCPACK NiO strong-scaling experiment: one POD per NODE, the MiniCluster spans
+# nodes (the gang). size=2 -> 2 nodes; tasks=160 -> 80 ranks/pod. Anti-affinity +
+# a whole-node CPU request force exactly one pod per node. Scale together:
+# tasks = (cpu per pod) * size. Bump toward 88/176 if the node has the headroom.
+apiVersion: flux-framework.org/v1alpha2
+kind: MiniCluster
+metadata:
+  name: qmcpack
+spec:
+  size: 2
+  tasks: 160
+  pod:
+    schedulerName: fluence
+    labels:
+      fluence.flux-framework.org/group: qmcpack
+  containers:
+  - image: ghcr.io/converged-computing/qmcpack-efa:latest
+    imagePullPolicy: Never
+    workingDir: /opt/qmcpack-3.16.0/build/tests/performance/NiO/dmc-a32-e384-batched_driver-DU32
+    command: qmcpack NiO-fcc-S8-dmc-strongscale.xml
+    resources:
+      requests:
+        cpu: "80"
+      limits:
+        cpu: "80"
+    volumes:
+      shared-memory:
+        emptyDir: true
+        emptyDirMedium: "memory"

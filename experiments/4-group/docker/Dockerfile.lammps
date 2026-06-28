@@ -1,0 +1,25 @@
+# LAMMPS built against Amazon EFA Open MPI, with the ReaxFF package (the 2022
+# reaxc HNS benchmark). 2022 used tag stable_29Sep2021_update3 and cmake flags
+# -D PKG_REAXFF=yes -D BUILD_MPI=yes -D PKG_OPT=yes -D FFT=FFTW3.
+ARG BASE=ghcr.io/converged-computing/efa-openmpi-base:jammy
+FROM ${BASE}
+
+RUN git clone --single-branch --branch stable_29Sep2021_update3 \
+        https://github.com/lammps/lammps.git /opt/lammps \
+    && mkdir -p /opt/lammps/build && cd /opt/lammps/build \
+    && cmake ../cmake \
+        -D CMAKE_C_COMPILER=mpicc \
+        -D CMAKE_CXX_COMPILER=mpicxx \
+        -D BUILD_MPI=yes \
+        -D PKG_REAXFF=yes \
+        -D PKG_OPT=yes \
+        -D FFT=FFTW3 \
+    && make -j"$(nproc)" \
+    && test -x lmp \
+    && cp lmp /usr/local/bin/lmp \
+    && cp -r /opt/lammps/examples/reaxff/HNS /opt/hns
+
+WORKDIR /opt/hns
+RUN ldd /usr/local/bin/lmp | grep -i "openmpi\|mpi" || true
+# reaxc HNS benchmark input (in.reaxc.hns is provided in examples/reaxff/HNS)
+CMD ["lmp", "-in", "in.reaxc.hns", "-nocite"]

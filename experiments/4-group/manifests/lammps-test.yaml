@@ -1,0 +1,31 @@
+# LAMMPS gang via the Flux Operator, scheduled by Fluence (small test).
+# ReaxFF HNS benchmark. 
+apiVersion: flux-framework.org/v1alpha2
+kind: MiniCluster
+metadata:
+  name: lammps
+spec:
+  size: 2
+  tasks: 2
+  pod:
+    schedulerName: fluence
+    labels:
+      fluence.flux-framework.org/group: lammps
+  containers:
+  - image: ghcr.io/converged-computing/lammps-efa:latest
+    imagePullPolicy: Never
+    workingDir: /opt/hns
+    command: lmp -v x 2 -v y 1 -v z 1 -in in.reaxc.hns -nocite
+    #environment:
+    #  FI_PROVIDER: "efa"
+    #  FI_EFA_FORK_SAFE: "1"
+    volumes:
+      # Ensure /dev/shm does not limit efa
+      shared-memory:
+        emptyDir: true
+        emptyDirMedium: "memory"
+    #resources:
+    #  limits:
+    #    vpc.amazonaws.com/efa: 1
+    #  requests:
+    #    vpc.amazonaws.com/efa: 1

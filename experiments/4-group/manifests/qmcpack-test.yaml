@@ -1,0 +1,22 @@
+# QMCPACK local smoke test: small H2 input (2 electrons), 2 pods / 2 ranks.
+# Light — safe to run locally. Just confirms the binary runs + Fluence schedules.
+apiVersion: flux-framework.org/v1alpha2
+kind: MiniCluster
+metadata:
+  name: qmcpack
+spec:
+  size: 2
+  tasks: 2
+  pod:
+    schedulerName: fluence
+    labels:
+      fluence.flux-framework.org/group: qmcpack
+  containers:
+  - image: ghcr.io/converged-computing/qmcpack-efa:latest
+    imagePullPolicy: Never
+    workingDir: /opt/smoke
+    command: qmcpack h2_orb_opt.xml
+    volumes:
+      shared-memory:
+        emptyDir: true
+        emptyDirMedium: "memory"

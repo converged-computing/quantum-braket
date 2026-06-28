@@ -1,0 +1,34 @@
+# Gang-scheduling smoke test for Fluence.
+#
+# What this proves: Fluence's classical GANG scheduling — a group of pods is
+# placed all-at-once (atomic), via the group label + group-size annotation, with
+# no quantum/Braket in the loop. The webhook's gang handler (gang.go) creates a
+# Fluence PodGroup with minCount = group-size and links every pod to it; Fluence
+# then schedules the whole group together or not at all.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sleep-gang
+  labels: {app: fluence-gang-test}
+spec:
+  completionMode: Indexed
+  completions: 4
+  parallelism: 4
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: fluence-gang-test
+        fluence.flux-framework.org/group: sleep-gang
+    spec:
+      schedulerName: fluence
+      restartPolicy: Never
+      containers:
+        - name: sleep
+          image: busybox:latest
+          command: ["sh", "-c", "echo gang member ${JOB_COMPLETION_INDEX} up at $(date -u +%T); sleep 180; echo done"]
+          env:
+            - name: JOB_COMPLETION_INDEX
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['batch.kubernetes.io/job-completion-index']
