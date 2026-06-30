@@ -128,6 +128,33 @@ python3 run_experiment.py --backend sv1 --scheduler fluence
 # Plot
 python3 plot_results.py results/combined-sv1-*.csv -o img/gang-sv1.png
 ```
+```console
+stats:
+  dm1 2w default  n=10 mean=17.32 median=17.26 stdev=0.30
+  dm1 4w default  n=10 mean=34.84 median=34.64 stdev=0.56
+  dm1 8w default  n=10 mean=74.18 median=74.20 stdev=0.75
+  dm1 2w fluence  n=5 mean=6.26 median=6.28 stdev=0.12
+  dm1 4w fluence  n=5 mean=16.90 median=16.79 stdev=0.30
+  dm1 8w fluence  n=5 mean=62.80 median=62.14 stdev=1.28
+  rigetti_cepheus 2w default  n=5 mean=21.87 median=18.11 stdev=5.57
+  rigetti_cepheus 4w default  n=5 mean=56.41 median=55.89 stdev=1.45
+  rigetti_cepheus 8w default  n=5 mean=95.72 median=96.46 stdev=19.89
+  rigetti_cepheus 2w fluence  n=5 mean=6.66 median=6.42 stdev=0.61
+  rigetti_cepheus 4w fluence  n=5 mean=17.17 median=17.17 stdev=0.49
+  rigetti_cepheus 8w fluence  n=5 mean=64.07 median=63.24 stdev=1.37
+  sv1 2w default  n=5 mean=17.12 median=17.10 stdev=0.10
+  sv1 4w default  n=6 mean=38.14 median=34.48 stdev=8.95
+  sv1 8w default  n=5 mean=75.68 median=75.27 stdev=1.08
+  sv1 2w fluence  n=5 mean=6.37 median=6.33 stdev=0.17
+  sv1 4w fluence  n=6 mean=17.09 median=16.82 stdev=0.76
+  sv1 8w fluence  n=5 mean=63.67 median=62.34 stdev=2.60
+  tn1 2w default  n=15 mean=44.68 median=54.91 stdev=19.34
+  tn1 4w default  n=15 mean=85.15 median=109.57 stdev=37.07
+  tn1 8w default  n=15 mean=186.98 median=222.97 stdev=86.37
+  tn1 2w fluence  n=14 mean=3.40 median=4.47 stdev=2.26
+  tn1 4w fluence  n=10 mean=10.89 median=11.13 stdev=0.56
+  tn1 8w fluence  n=10 mean=32.07 median=31.72 stdev=2.16
+```
 
 ### Useful flags
 

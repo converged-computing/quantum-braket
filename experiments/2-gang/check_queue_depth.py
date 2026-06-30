@@ -4,6 +4,7 @@ from braket.aws import AwsDevice, AwsQuantumTask
 # Device queue depth
 device = AwsDevice("arn:aws:braket:eu-north-1::device/qpu/iqm/Garnet")
 device = AwsDevice("arn:aws:braket:us-west-1::device/qpu/rigetti/Cepheus-1-108Q")
+device = AwsDevice("arn:aws:braket:eu-north-1::device/qpu/iqm/Emerald")
 depth = device.queue_depth()
 print(f"IQM Garnet queue depth:")
 print(f"  normal tasks : {depth.quantum_tasks}")
@@ -14,7 +15,7 @@ client = boto3.client("braket", region_name="eu-north-1")
 response = client.search_quantum_tasks(
     filters=[
         {"name": "deviceArn", "operator": "EQUAL",
-         "values": ["arn:aws:braket:eu-north-1::device/qpu/iqm/Garnet"]},
+         "values": ["arn:aws:braket:eu-north-1::device/qpu/iqm/Emerald"]},
         {"name": "status", "operator": "EQUAL", "values": ["QUEUED"]},
     ],
     maxResults=50

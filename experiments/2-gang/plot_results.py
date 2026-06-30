@@ -53,15 +53,16 @@ def load_rows(paths):
     for path in paths:
         with open(path, newline="") as f:
             for r in csv.DictReader(f):
-                if not r.get("scheduler") or not r.get("total_consumer_idle_s"):
+                idle_time = r.get("total_consumer_idle_s") or r.get('total_worker_idle_s')
+                if not r.get("scheduler") or not idle_time:
                     continue
                 try:
                     rec = {
                         "backend":   (r.get("backend") or "?").strip(),
                         "scheduler": r["scheduler"].strip(),
-                        "idle":      float(r["total_consumer_idle_s"]),
+                        "idle":      float(idle_time),
                         "qpu":       float(r.get("qpu_queue_wait_s") or 0),
-                        "n_workers": int(float(r.get("n_consumers") or 0)),  # CSV col n_consumers
+                        "n_workers": int(float(r.get("n_consumers") or r.get('n_workers') or 0)),  # CSV col n_consumers
                         "n_nodes":   int(float(r.get("n_nodes") or 0)),
                     }
                 except ValueError:

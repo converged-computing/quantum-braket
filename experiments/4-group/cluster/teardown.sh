@@ -5,8 +5,8 @@
 # after 30 days, but tear down sooner to stop billing.)
 set -euo pipefail
 
-CLUSTER_NAME="${CLUSTER_NAME:-fluence-gang}"
-ZONE="${ZONE:-us-central1-a}"
+export CLUSTER_NAME=fluence-gang
+export ZONE=us-central1-a          # confirm h3 is offered here (see note)
 
 command -v gcloud >/dev/null || { echo "gcloud not installed" >&2; exit 1; }
 
