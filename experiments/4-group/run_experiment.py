@@ -43,7 +43,7 @@ APPS = {
     "amg":     {"image": "vanessa/fluence-experiments:amg",
                 "cmd": lambda r: f"amg -P {amg_topology(r)} -n 8 8 8", "workdir": None, "imagePullPolicy": "Always"},
     "lammps":  {"image": "vanessa/fluence-experiments:lammps",
-                "cmd": lambda r: "lmp -v x 8 -v y 8 -v z 8 -v nsteps 5 -in in.reaxc.hns -nocite",
+                "cmd": lambda r: "lmp -v x 8 -v y 4 -v z 8 -v nsteps 5 -in in.reaxc.hns -nocite",
                 "workdir": "/opt/hns", "imagePullPolicy": "Always"},
     # QMCPACK: set the command to the PLAIN VMC input from /opt/smoke (NOT the
     # h2_orb_opt optimizer, which is slow). Replace VMC_INPUT.xml with the file
@@ -65,9 +65,11 @@ def build_batch(apps, sizes):
     """The grid: one gang per (app, size). All submitted at once."""
     batch = []
     for app in apps:
-        for size in sizes:
-            batch.append({"app": app, "size": size,
-                          "name": f"{app}-n{size}-{uuid.uuid4().hex[:6]}"})
+        for i in range(4):
+            for size in sizes:
+                batch.append({"app": app, "size": size,
+                              "name": f"{app}-n{size}-{uuid.uuid4().hex[:6]}"})
+    print(batch)
     random.shuffle(batch)   # interleave apps/sizes so submission order is mixed
     return batch
 

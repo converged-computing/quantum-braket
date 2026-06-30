@@ -1,0 +1,37 @@
+scheduler,rep,gang,app,size,ranks,final_status,pending_s,startup_s,apprun_s,total_s,placed_after_s,done_after_s,created_at,scheduled_at,ready_at,app_start_at,app_end_at,nodes,node_layout
+default,1,amg-n2-8d0444,amg,2,16,done,0.0,,85.0,123.0,0.93,123.93,2026-06-28T23:57:34+00:00,2026-06-28T23:57:34+00:00,,2026-06-28T23:58:12+00:00,2026-06-28T23:59:37+00:00,2,"{""gke-fluence-gang-default-pool-baeeea1c-k9r3"": 1, ""gke-fluence-gang-default-pool-baeeea1c-jnzp"": 1}"
+default,1,lammps-n4-859ee4,lammps,4,32,done,125.0,,132.0,176.0,125.93,176.93,2026-06-28T23:57:34+00:00,2026-06-28T23:59:39+00:00,,2026-06-28T23:58:18+00:00,2026-06-29T00:00:30+00:00,4,"{""gke-fluence-gang-default-pool-baeeea1c-ngcz"": 1, ""gke-fluence-gang-default-pool-baeeea1c-6w60"": 1, ""gke-fluence-gang-default-pool-baeeea1c-k9r3"": 1, ""gke-fluence-gang-default-pool-baeeea1c-jnzp"": 1}"
+default,1,lammps-n4-661f1f,lammps,4,32,done,181.0,,32.0,219.0,182.93,220.93,2026-06-28T23:57:35+00:00,2026-06-29T00:00:36+00:00,,2026-06-29T00:00:42+00:00,2026-06-29T00:01:14+00:00,4,"{""gke-fluence-gang-default-pool-baeeea1c-6w60"": 1, ""gke-fluence-gang-default-pool-baeeea1c-k9r3"": 1, ""gke-fluence-gang-default-pool-baeeea1c-ngcz"": 1, ""gke-fluence-gang-default-pool-baeeea1c-jnzp"": 1}"
+default,1,amg-n2-c17e4a,amg,2,16,done,219.0,,85.0,314.0,221.93,316.93,2026-06-28T23:57:36+00:00,2026-06-29T00:01:15+00:00,,2026-06-29T00:01:25+00:00,2026-06-29T00:02:50+00:00,2,"{""gke-fluence-gang-default-pool-baeeea1c-k9r3"": 1, ""gke-fluence-gang-default-pool-baeeea1c-ngcz"": 1}"
+default,1,amg-n1-0c15e7,amg,1,8,pending,,,,,,,,,,,,0,{}
+default,1,lammps-n4-a89ea9,lammps,4,32,pending,,,,,,,,,,,,0,{}
+default,1,qmcpack-n2-904b14,qmcpack,2,16,pending,,,,,,,,,,,,0,{}
+default,1,amg-n1-f1dd1c,amg,1,8,pending,,,,,,,,,,,,0,{}
+default,1,qmcpack-n1-2ed7b4,qmcpack,1,8,pending,,,,,,,,,,,,0,{}
+default,1,lammps-n2-02621f,lammps,2,16,pending,,,,,,,,,,,,0,{}
+default,1,qmcpack-n4-de2b16,qmcpack,4,32,pending,,,,,,,,,,,,0,{}
+default,1,amg-n1-9a6182,amg,1,8,pending,,,,,,,,,,,,0,{}
+default,1,qmcpack-n1-4e9b97,qmcpack,1,8,pending,,,,,,,,,,,,0,{}
+default,1,qmcpack-n2-d1a0dc,qmcpack,2,16,pending,,,,,,,,,,,,0,{}
+default,1,qmcpack-n4-97b639,qmcpack,4,32,pending,,,,,,,,,,,,0,{}
+default,1,qmcpack-n2-701981,qmcpack,2,16,pending,,,,,,,,,,,,0,{}
+default,1,lammps-n4-29da07,lammps,4,32,pending,,,,,,,,,,,,0,{}
+default,1,amg-n4-2a851d,amg,4,32,pending,,,,,,,,,,,,0,{}
+default,1,lammps-n1-9a75bd,lammps,1,8,done,971.0,,74.0,1055.0,984.93,1068.93,2026-06-28T23:57:47+00:00,2026-06-29T00:13:58+00:00,,2026-06-29T00:14:08+00:00,2026-06-29T00:15:22+00:00,1,"{""gke-fluence-gang-default-pool-baeeea1c-6w60"": 1}"
+default,1,lammps-n2-2422d5,lammps,2,16,pending,,,,,,,,,,,,0,{}
+default,1,amg-n2-a16839,amg,2,16,pending,,,,,,,,,,,,0,{}
+default,1,lammps-n1-9e8461,lammps,1,8,done,206.0,,74.0,290.0,221.93,305.93,2026-06-28T23:57:49+00:00,2026-06-29T00:01:15+00:00,,2026-06-29T00:01:25+00:00,2026-06-29T00:02:39+00:00,1,"{""gke-fluence-gang-default-pool-baeeea1c-jnzp"": 1}"
+default,1,amg-n4-cdedc6,amg,4,32,done,302.0,,185.0,401.0,318.93,417.93,2026-06-28T23:57:50+00:00,2026-06-29T00:02:52+00:00,,2026-06-29T00:01:26+00:00,2026-06-29T00:04:31+00:00,4,"{""gke-fluence-gang-default-pool-baeeea1c-6w60"": 1, ""gke-fluence-gang-default-pool-baeeea1c-jnzp"": 1, ""gke-fluence-gang-default-pool-baeeea1c-ngcz"": 1, ""gke-fluence-gang-default-pool-baeeea1c-k9r3"": 1}"
+default,1,qmcpack-n1-054d6f,qmcpack,1,8,done,401.0,,7.0,428.0,418.93,445.93,2026-06-28T23:57:51+00:00,2026-06-29T00:04:32+00:00,,2026-06-29T00:04:52+00:00,2026-06-29T00:04:59+00:00,1,"{""gke-fluence-gang-default-pool-baeeea1c-6w60"": 1}"
+default,1,qmcpack-n2-1f3c18,qmcpack,2,16,done,402.0,,8.0,429.0,419.93,446.93,2026-06-28T23:57:51+00:00,2026-06-29T00:04:33+00:00,,2026-06-29T00:04:52+00:00,2026-06-29T00:05:00+00:00,2,"{""gke-fluence-gang-default-pool-baeeea1c-k9r3"": 1, ""gke-fluence-gang-default-pool-baeeea1c-ngcz"": 1}"
+default,1,amg-n4-f68e4f,amg,4,32,pending,,,,,,,,,,,,0,{}
+default,1,qmcpack-n1-555b1c,qmcpack,1,8,pending,,,,,,,,,,,,0,{}
+default,1,qmcpack-n4-c34900,qmcpack,4,32,pending,,,,,,,,,,,,0,{}
+default,1,amg-n4-17b5a8,amg,4,32,done,774.0,,423.0,872.0,794.93,892.93,2026-06-28T23:57:54+00:00,2026-06-29T00:10:48+00:00,,2026-06-29T00:05:23+00:00,2026-06-29T00:12:26+00:00,4,"{""gke-fluence-gang-default-pool-baeeea1c-ngcz"": 1, ""gke-fluence-gang-default-pool-baeeea1c-6w60"": 1, ""gke-fluence-gang-default-pool-baeeea1c-k9r3"": 1, ""gke-fluence-gang-default-pool-baeeea1c-jnzp"": 1}"
+default,1,amg-n1-da9646,amg,1,8,done,872.0,,79.0,961.0,893.93,982.93,2026-06-28T23:57:55+00:00,2026-06-29T00:12:27+00:00,,2026-06-29T00:12:37+00:00,2026-06-29T00:13:56+00:00,1,"{""gke-fluence-gang-default-pool-baeeea1c-6w60"": 1}"
+default,1,lammps-n2-b8c665,lammps,2,16,pending,,,,,,,,,,,,0,{}
+default,1,qmcpack-n4-2290b4,qmcpack,4,32,pending,,,,,,,,,,,,0,{}
+default,1,amg-n2-f0211e,amg,2,16,pending,,,,,,,,,,,,0,{}
+default,1,lammps-n1-5e8aee,lammps,1,8,pending,,,,,,,,,,,,0,{}
+default,1,lammps-n2-0b3c58,lammps,2,16,pending,,,,,,,,,,,,0,{}
+default,1,lammps-n1-513577,lammps,1,8,pending,,,,,,,,,,,,0,{}
