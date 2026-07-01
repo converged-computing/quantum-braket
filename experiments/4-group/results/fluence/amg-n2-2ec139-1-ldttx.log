@@ -1,0 +1,94 @@
+Hello I am hostname amg-n2-2ec139-1 running setup.
+Flux install root: /opt/view
+
+🐸 Broker Configuration
+[access]
+allow-guest-user = true
+allow-root-owner = true
+
+# Point to resource definition generated with flux-R(1).
+[resource]
+path = "/mnt/flux/config/etc/flux/system/R"
+
+[bootstrap]
+curve_cert = "/mnt/flux/config/curve/curve.cert"
+default_port = 8050
+default_bind = "tcp://eth0:%p"
+default_connect = "tcp://%h.amg-n2-2ec139.default.svc.cluster.local:%p"
+hosts = [
+{ host="amg-n2-2ec139-[0-1]"},
+]		
+
+
+[archive]
+dbpath = "/mnt/flux/config/var/lib/flux/job-archive.sqlite"
+period = "1m"
+busytimeout = "50s"
+
+[sched-fluxion-qmanager]
+queue-policy = "fcfs"
+
+🌟️ Curve Certificate
+#   ****  Generated on 2023-04-26 22:54:42 by CZMQ  ****
+#   ZeroMQ CURVE **Secret** Certificate
+#   DO NOT PROVIDE THIS FILE TO OTHER USERS nor change its permissions.
+    
+metadata
+    name = "flux-cert-generator"
+    keygen.hostname = "amg-n2-2ec139-0"
+curve
+    public-key = "IOj!A6LyObD)<J5l29t{zO73$=L&HiR5b@aKVTH@"
+    secret-key = "QU./iH$4F%w&m7z]GkCMm45C{4r]9pc^cS}!wh%V"
+Moving content from /opt/view to be in shared volume at /mnt/flux
+Application is done.
+
+Flux install root: /mnt/flux/view
+
+Python version: /mnt/flux/view/bin/python3.14
+Python root: /mnt/flux/view/lib/python3.14
+PYTHONPATH is :/mnt/flux/view/lib/python3.14/site-packages
+PATH is /opt/amazon/openmpi/bin:/opt/amazon/efa/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/mnt/flux/view/bin
+/mnt/flux/view/lib/libpython3.14.so
+/mnt/flux/view/lib/libpython3.so
+/mnt/flux/view/lib/libpython3.14.so.1.0
+ls: cannot access '/mnt/flux/view/lib/libpython3.11.so.1.0': No such file or directory
+
+Hello user root
+
+🌟️ Curve Certificate
+curve.cert
+#   ****  Generated on 2023-04-26 22:54:42 by CZMQ  ****
+#   ZeroMQ CURVE **Secret** Certificate
+#   DO NOT PROVIDE THIS FILE TO OTHER USERS nor change its permissions.
+    
+metadata
+    name = "flux-cert-generator"
+    keygen.hostname = "amg-n2-2ec139-0"
+curve
+    public-key = "IOj!A6LyObD)<J5l29t{zO73$=L&HiR5b@aKVTH@"
+    secret-key = "QU./iH$4F%w&m7z]GkCMm45C{4r]9pc^cS}!wh%V"
+
+📦 Resources
+flux R encode --hosts=amg-n2-2ec139-[0-1] --local
+{"version": 1, "execution": {"R_lite": [{"rank": "0-1", "children": {"core": "0-87"}}], "starttime": 0.0, "expiration": 0.0, "nodelist": ["amg-n2-2ec139-[0-1]"]}}
+👋 Hello, I'm amg-n2-2ec139-1
+The main host is amg-n2-2ec139-0
+The working directory is /opt/AMG, contents include:
+COPYRIGHT  IJ_mv    Makefile	      README  krylov	 parcsr_mv  test
+HYPRE.h    LICENSE  Makefile.include  docs    parcsr_ls  seq_mv     utilities
+🚩️ Flux Option Flags defined
+🌀 flux start  -o --config /mnt/flux/config/etc/flux/config -Scron.directory=/mnt/flux/config/etc/flux/system/cron.d   -Stbon.fanout=256   -Srundir=/mnt/flux/config/run/flux    -Sstatedir=/mnt/flux/config/var/lib/flux -Slocal-uri=local:///mnt/flux/config/run/flux/local -Stbon.connect_timeout=5s     -Slog-stderr-level=6    -Slog-stderr-mode=local
+<6>broker.info[1]: builtins-success: load-builtins->join 4.17964ms
+<6>broker.info[1]: parent-ready: join->config-sync 1.02717s
+<6>broker.info[1]: sync-success: config-sync->init 0.511523ms
+<6>broker.info[1]: rc1.0: flux modprobe rc1 Exited (rc=0) 0.9s
+<6>broker.info[1]: rc1-success: init->quorum 0.904511s
+<6>broker.info[1]: quorum-full: quorum->run 0.200972s
+<6>broker.info[1]: shutdown: run->cleanup 1.35303m
+<6>broker.info[1]: cleanup-none: cleanup->shutdown 0.023106ms
+<6>broker.info[1]: children-none: shutdown->finalize 0.062652ms
+<6>broker.info[1]: rc3.0: flux modprobe rc3 Exited (rc=0) 0.1s
+<6>broker.info[1]: rc3-success: finalize->goodbye 0.148487s
+<6>broker.info[1]: goodbye: goodbye->unload-builtins 0.28718ms
+<6>broker.info[1]: builtins-done: unload-builtins->exit 0.484079ms
+The follower worker exited cleanly. Goodbye!

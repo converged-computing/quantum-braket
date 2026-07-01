@@ -1,0 +1,166 @@
+Hello I am hostname amg-n1-af661b-0 running setup.
+Flux install root: /opt/view
+
+🐸 Broker Configuration
+[access]
+allow-guest-user = true
+allow-root-owner = true
+
+# Point to resource definition generated with flux-R(1).
+[resource]
+path = "/mnt/flux/config/etc/flux/system/R"
+
+[bootstrap]
+curve_cert = "/mnt/flux/config/curve/curve.cert"
+default_port = 8050
+default_bind = "tcp://eth0:%p"
+default_connect = "tcp://%h.amg-n1-af661b.default.svc.cluster.local:%p"
+hosts = [
+{ host="amg-n1-af661b-[0]"},
+]		
+
+
+[archive]
+dbpath = "/mnt/flux/config/var/lib/flux/job-archive.sqlite"
+period = "1m"
+busytimeout = "50s"
+
+[sched-fluxion-qmanager]
+queue-policy = "fcfs"
+
+🌟️ Curve Certificate
+#   ****  Generated on 2023-04-26 22:54:42 by CZMQ  ****
+#   ZeroMQ CURVE **Secret** Certificate
+#   DO NOT PROVIDE THIS FILE TO OTHER USERS nor change its permissions.
+    
+metadata
+    name = "flux-cert-generator"
+    keygen.hostname = "amg-n1-af661b-0"
+curve
+    public-key = "Qu5t}X(IfogJetkv7c5w:Y*PEPetJIu]4:io7W=U"
+    secret-key = "}SJQc?k)):!g4(l./AS.l/N>7Bum*bZ=({Cu(>Y>"
+Moving content from /opt/view to be in shared volume at /mnt/flux
+Application is done.
+
+Flux install root: /mnt/flux/view
+
+Python version: /mnt/flux/view/bin/python3.14
+Python root: /mnt/flux/view/lib/python3.14
+PYTHONPATH is :/mnt/flux/view/lib/python3.14/site-packages
+PATH is /opt/amazon/openmpi/bin:/opt/amazon/efa/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/mnt/flux/view/bin
+/mnt/flux/view/lib/libpython3.14.so
+/mnt/flux/view/lib/libpython3.so
+/mnt/flux/view/lib/libpython3.14.so.1.0
+ls: cannot access '/mnt/flux/view/lib/libpython3.11.so.1.0': No such file or directory
+
+Hello user root
+
+🌟️ Curve Certificate
+curve.cert
+#   ****  Generated on 2023-04-26 22:54:42 by CZMQ  ****
+#   ZeroMQ CURVE **Secret** Certificate
+#   DO NOT PROVIDE THIS FILE TO OTHER USERS nor change its permissions.
+    
+metadata
+    name = "flux-cert-generator"
+    keygen.hostname = "amg-n1-af661b-0"
+curve
+    public-key = "Qu5t}X(IfogJetkv7c5w:Y*PEPetJIu]4:io7W=U"
+    secret-key = "}SJQc?k)):!g4(l./AS.l/N>7Bum*bZ=({Cu(>Y>"
+
+📦 Resources
+flux R encode --hosts=amg-n1-af661b-[0] --local
+{"version": 1, "execution": {"R_lite": [{"rank": "0", "children": {"core": "0-87"}}], "starttime": 0.0, "expiration": 0.0, "nodelist": ["amg-n1-af661b-0"]}}
+👋 Hello, I'm amg-n1-af661b-0
+The main host is amg-n1-af661b-0
+The working directory is /opt/AMG, contents include:
+COPYRIGHT  IJ_mv    Makefile	      README  krylov	 parcsr_mv  test
+HYPRE.h    LICENSE  Makefile.include  docs    parcsr_ls  seq_mv     utilities
+🚩️ Flux Option Flags defined
+Command provided is: amg -P 2 2 2 -n 8 8 8
+Flags for flux are -N 1 -n8  
+
+🌀 Submit Mode: flux start -o --config /mnt/flux/config/etc/flux/config -Scron.directory=/mnt/flux/config/etc/flux/system/cron.d   -Stbon.fanout=256   -Srundir=/mnt/flux/config/run/flux    -Sstatedir=/mnt/flux/config/var/lib/flux -Slocal-uri=local:///mnt/flux/config/run/flux/local -Stbon.connect_timeout=5s     -Slog-stderr-level=6    -Slog-stderr-mode=local  flux submit  -N 1 -n8   --quiet --watch amg -P 2 2 2 -n 8 8 8
+Flags for flux are -N 1 -n8  
+<6>broker.info[0]: builtins-success: load-builtins->join 2.06489ms
+<6>broker.info[0]: parent-none: join->config-sync 0.011145ms
+<6>broker.info[0]: sync-none: config-sync->init 0.015127ms
+<6>cron.info[0]: synchronizing cron tasks to event heartbeat.pulse
+<6>job-manager.info[0]: restart: 0 jobs
+<6>job-manager.info[0]: restart: 0 running jobs
+<6>job-manager.info[0]: restart: checkpoint.job-manager not found
+<6>broker.info[0]: rc1.0: flux modprobe rc1 Exited (rc=0) 1.0s
+<6>broker.info[0]: rc1-success: init->quorum 1.01596s
+<6>broker.info[0]: online: amg-n1-af661b-0 (ranks 0)
+<6>broker.info[0]: quorum-full: quorum->run 0.100484s
+Running with these driver parameters:
+  solver ID    = 1
+
+  Laplacian_27pt:
+    (Nx, Ny, Nz) = (16, 16, 16)
+    (Px, Py, Pz) = (2, 2, 2)
+
+=============================================
+Generate Matrix:
+=============================================
+Spatial Operator:
+  wall clock time = 0.373496 seconds
+  wall MFLOPS     = 0.000000
+  cpu clock time  = 0.395258 seconds
+  cpu MFLOPS      = 0.000000
+
+  RHS vector has unit components
+  Initial guess is 0
+=============================================
+IJ Vector Setup:
+=============================================
+RHS and Initial Guess:
+  wall clock time = 0.099997 seconds
+  wall MFLOPS     = 0.000000
+  cpu clock time  = 0.092115 seconds
+  cpu MFLOPS      = 0.000000
+
+=============================================
+Problem 1: AMG Setup Time:
+=============================================
+PCG Setup:
+  wall clock time = 16.241491 seconds
+  wall MFLOPS     = 0.000000
+  cpu clock time  = 16.496611 seconds
+  cpu MFLOPS      = 0.000000
+
+
+FOM_Setup: nnz_AP / Setup Phase Time: 6.485735e+03
+
+=============================================
+Problem 1: AMG-PCG Solve Time:
+=============================================
+PCG Solve:
+  wall clock time = 57.203963 seconds
+  wall MFLOPS     = 0.000000
+  cpu clock time  = 57.480885 seconds
+  cpu MFLOPS      = 0.000000
+
+
+Iterations = 16
+Final Relative Residual Norm = 8.026632e-09
+
+
+FOM_Solve: nnz_AP * Iterations / Solve Phase Time: 2.946313e+04
+
+
+
+Figure of Merit (FOM_1): 2.371878e+04
+
+<6>broker.info[0]: rc2.0: flux submit -N 1 -n8 --quiet --watch amg -P 2 2 2 -n 8 8 8 Exited (rc=0) 75.3s
+<6>broker.info[0]: rc2-success: run->cleanup 1.25557m
+<6>broker.info[0]: cleanup.0: flux queue stop --quiet --all --nocheckpoint Exited (rc=0) 0.1s
+<6>broker.info[0]: cleanup.1: flux resource acquire-mute Exited (rc=0) 0.1s
+<6>broker.info[0]: cleanup.2: flux cancel --user=all --quiet --states RUN Exited (rc=0) 0.1s
+<6>broker.info[0]: cleanup.3: flux queue idle --quiet Exited (rc=0) 0.1s
+<6>broker.info[0]: cleanup-success: cleanup->shutdown 0.499083s
+<6>broker.info[0]: children-none: shutdown->finalize 0.096955ms
+<6>broker.info[0]: rc3.0: flux modprobe rc3 Exited (rc=0) 0.2s
+<6>broker.info[0]: rc3-success: finalize->goodbye 0.154371s
+<6>broker.info[0]: goodbye: goodbye->unload-builtins 0.035168ms
+<6>broker.info[0]: builtins-done: unload-builtins->exit 0.379806ms

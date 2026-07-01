@@ -39,29 +39,37 @@ def load(path):
         if c in df:
             df[c] = pd.to_numeric(df[c], errors="coerce")
 
-    # squat window per gang = scheduled_at (gang fully placed) - app_start_at
-    # (first pod's container). ~0 for Fluence (atomic placement); large for the
-    # default scheduler. (ready_at would be ~0 for both -- it happens after
-    # assembly -- which is why an earlier version's panel was empty.)
-    for c in ["scheduled_at", "app_start_at", "ready_at", "app_end_at"]:
+    for c in ["scheduled_at", "app_start_at", "ready_at", "app_end_at",
+              "first_running_at", "gang_up_at"]:
         if c in df:
             df[c] = pd.to_datetime(df[c], errors="coerce", utc=True)
-    if "scheduled_at" in df and "app_start_at" in df:
-        df["assembly_skew_s"] = ((df["scheduled_at"] - df["app_start_at"])
-                                 .dt.total_seconds().clip(lower=0))
-    # "whole gang up" marker: ready_at would be ideal, but the runner records it
-    # as NaT (never populated), so fall back to the latest of (gang fully placed,
-    # first container start) -- both ARE recorded. run time = that -> app end.
-    if "app_end_at" in df and "scheduled_at" in df and "app_start_at" in df:
+
+    # RUN TIME: whole gang up -> finished. Prefer the runner's exact run_s
+    # (app_end - gang_up, where gang_up = LAST rank's container start). Fall back
+    # to the old proxy only for legacy CSVs that lack it.
+    if "run_s" in df and pd.to_numeric(df["run_s"], errors="coerce").notna().any():
+        df["run_s"] = pd.to_numeric(df["run_s"], errors="coerce")
+    elif "app_end_at" in df and "scheduled_at" in df and "app_start_at" in df:
         gang_up = df[["scheduled_at", "app_start_at"]].max(axis=1)
         df["run_s"] = (df["app_end_at"] - gang_up).dt.total_seconds().clip(lower=0)
 
-    if "squat_node_s" in df:
+    # WORKER IDLE / SQUAT: prefer the runner's EXACT per-pod sum
+    # worker_idle_node_s = Σ_pods (gang_up − pod_start), which is >=0 by
+    # construction. Fall back to the old sign-flipping skew*(size-1) upper bound
+    # only if the exact column is absent (legacy CSV).
+    if ("worker_idle_node_s" in df
+            and pd.to_numeric(df["worker_idle_node_s"], errors="coerce").notna().any()):
+        df["squat"] = pd.to_numeric(df["worker_idle_node_s"], errors="coerce")
+        df["squat_kind"] = "measured (per-pod)"
+    elif "squat_node_s" in df:
         df["squat"] = pd.to_numeric(df["squat_node_s"], errors="coerce")
         df["squat_kind"] = "measured"
-    elif "assembly_skew_s" in df:
-        df["squat"] = df["assembly_skew_s"] * (df["size"] - 1).clip(lower=0)
-        df["squat_kind"] = "upper-bound"
+    else:
+        if "scheduled_at" in df and "app_start_at" in df:
+            df["assembly_skew_s"] = ((df["scheduled_at"] - df["app_start_at"])
+                                     .dt.total_seconds().clip(lower=0))
+            df["squat"] = df["assembly_skew_s"] * (df["size"] - 1).clip(lower=0)
+            df["squat_kind"] = "upper-bound"
     return df
 
 
@@ -116,7 +124,7 @@ def plot(df, out, show):
             ax.text(b.get_x() + b.get_width() / 2, t + hi * 0.02, f"{t:.0f}",
                     ha="center", va="bottom", fontsize=11, fontweight="bold")
         ax.set_title(f"Wasted node-time: total accumulated ({kind})\n"
-                     "\u03a3 (gang assembled \u2212 first pod start) \u00d7 (size \u2212 1)")
+                     "\u03a3 over members (gang up \u2212 member start)")
         ax.set_ylabel("node-seconds")
         ax.grid(axis="y", alpha=0.25)
         ax.set_ylim(0, hi * 1.18)   # headroom for the value labels
@@ -193,38 +201,36 @@ def plot_by_size(df, out, show):
     fig.suptitle("Gang scheduling under contention, by gang size: Fluence vs default-scheduler",
                  fontsize=15, fontweight="bold")
 
-    # Panel 1: worker idle -- the summed member-running-while-others-not-ready
-    # node-seconds. The exact per-member sum needs per-pod ready times the runner
-    # did not save; this is the upper bound (skew x (size-1)) from the recorded
-    # gang-level times, which is what `squat` holds. n=1 has none (size-1=0).
-    sizes_sq = [s for s in sizes if s > 1]
-    grouped_box(axes[0], "squat", sizes_sq,
-                "Worker idle (node-seconds, upper-bound)\n\u03a3 (whole gang up \u2212 member start)", "node-seconds")
+    # Panel 1: worker idle -- summed per-member node-seconds held while waiting
+    # for the slowest rank to come up. Sizes come from the data (a size-1 gang is
+    # simply ~0 by construction, so it needs no special-casing).
+    grouped_box(axes[0], "squat", sizes,
+                (f"Worker idle per gang ({df['squat_kind'].iloc[0]})\n"
+                 "\u03a3 over members (gang up \u2212 member start)"), "node-seconds")
 
     # Panel 2: run time -- whole gang up -> finished (gang fully placed, since
     # ready_at was not recorded). Excludes queue wait and the assembly idle.
     grouped_box(axes[1], "run_s", sizes,
                 "Run time (whole gang up \u2192 finished)\napp end \u2212 gang up", "seconds")
 
-    # Panel 3: total accumulated wasted node-time -- excludes n=1 (size-1 = 0).
+    # Panel 3: total accumulated wasted node-time. Sizes derived from the data.
     ax = axes[2]
-    sizes_sq = [s for s in sizes if s > 1]
-    if "squat" in df and df["squat"].notna().any() and sizes_sq:
+    if "squat" in df and df["squat"].notna().any() and sizes:
         kind = df["squat_kind"].iloc[0] if "squat_kind" in df else ""
         hi = 1
         for ai, a in enumerate(arms):
-            totals = [df[(df["arm"] == a) & (df["size"] == s)]["squat"].dropna().sum() for s in sizes_sq]
-            ax.bar(positions(ai, len(sizes_sq)), totals, width=bw * 0.86,
+            totals = [df[(df["arm"] == a) & (df["size"] == s)]["squat"].dropna().sum() for s in sizes]
+            ax.bar(positions(ai, len(sizes)), totals, width=bw * 0.86,
                    color=COLORS.get(a, "#999"), edgecolor=EDGES.get(a, "#444"), alpha=0.9)
             hi = max([hi] + totals)
-            for x, t in zip(positions(ai, len(sizes_sq)), totals):
+            for x, t in zip(positions(ai, len(sizes)), totals):
                 if t > 0:
                     ax.text(x, t + hi * 0.02, f"{t:.0f}", ha="center", va="bottom", fontsize=9, fontweight="bold")
-        ax.set_xticks(range(len(sizes_sq)))
-        ax.set_xticklabels([f"n={s}" for s in sizes_sq])
+        ax.set_xticks(range(len(sizes)))
+        ax.set_xticklabels([f"n={s}" for s in sizes])
         ax.set_xlabel("gang size (pods)")
         ax.set_title(f"Wasted node-time: total accumulated ({kind})\n"
-                     "\u03a3 (gang assembled \u2212 first pod start) \u00d7 (size \u2212 1)")
+                     "\u03a3 over members (gang up \u2212 member start)")
         ax.set_ylabel("node-seconds")
         ax.grid(axis="y", alpha=0.25); ax.set_ylim(0, hi * 1.18)
     else:

@@ -65,7 +65,7 @@ def build_batch(apps, sizes):
     """The grid: one gang per (app, size). All submitted at once."""
     batch = []
     for app in apps:
-        for i in range(4):
+        for i in range(1):
             for size in sizes:
                 batch.append({"app": app, "size": size,
                               "name": f"{app}-n{size}-{uuid.uuid4().hex[:6]}"})
@@ -145,6 +145,79 @@ def gang_timestamps(pods):
                 app_start=mn(starts), app_end=mx(ends))
 
 
+def pod_snapshot(p):
+    """Extract the durable per-pod timestamps from a single pod object.
+    creationTimestamp / PodScheduled / container start+end all PERSIST into the
+    terminal snapshot; Ready=True does NOT (it flips to False on exit), so it must
+    be captured while the pod is alive -- see update_pod_recs()."""
+    m, st = p.get("metadata", {}), p.get("status", {})
+    rec = {"created": parse_ts(m.get("creationTimestamp")),
+           "scheduled": None, "ready": None, "app_start": None, "app_end": None,
+           "node": p.get("spec", {}).get("nodeName") or None}
+    for c in st.get("conditions", []):
+        if c.get("type") == "PodScheduled" and c.get("status") == "True":
+            rec["scheduled"] = parse_ts(c.get("lastTransitionTime"))
+        if c.get("type") == "Ready" and c.get("status") == "True":
+            rec["ready"] = parse_ts(c.get("lastTransitionTime"))
+    for cs in st.get("containerStatuses", []):
+        stt = cs.get("state", {})
+        run = stt.get("running") or stt.get("terminated")
+        if run and run.get("startedAt"):
+            rec["app_start"] = parse_ts(run["startedAt"])
+        if "terminated" in stt and stt["terminated"].get("finishedAt"):
+            rec["app_end"] = parse_ts(stt["terminated"]["finishedAt"])
+    return rec
+
+
+def update_pod_recs(store, pods):
+    """Accumulate per-pod records ACROSS polls into `store` (keyed by pod name),
+    keeping the first non-null value seen for each field. This is what makes
+    ready_at survive: we latch Ready=True the poll we first see it, before the
+    pod terminates and the condition flips to False. All other fields are stable
+    historical times, so first-seen == authoritative."""
+    for p in pods:
+        name = p.get("metadata", {}).get("name")
+        if not name:
+            continue
+        cur = store.setdefault(name, {})
+        for k, v in pod_snapshot(p).items():
+            if v is not None and cur.get(k) is None:
+                cur[k] = v
+
+
+def gang_metrics(recs):
+    """Exact gang-level metrics from per-pod records (recs = list of per-pod dicts).
+    Everything here is derived from real per-pod times and is sign-correct:
+       created        = earliest pod creation (submit/admission)
+       scheduled      = LATEST PodScheduled (whole gang placed)
+       ready          = LATEST Ready=True (whole gang reported ready)
+       first_running  = EARLIEST container start (first rank up)
+       gang_up        = LATEST container start (ALL ranks up -> coupled app can
+                        actually make progress; this is the "entire gang running"
+                        marker)
+       app_end        = LATEST container finish (gang done)
+       worker_idle_node_s = SUM over pods of (gang_up - pod_start): exact
+                        node-seconds a rank held a node while waiting for the
+                        slowest rank to come up. >=0 by construction. Replaces the
+                        old sign-flipping skew*(size-1) upper bound.
+       assembly_span_s = gang_up - first_running (stagger between first & last up)
+       run_s          = app_end - gang_up (whole gang up -> finished; the true
+                        coupled run time, excludes queue wait AND assembly idle)"""
+    def mx(k):
+        v = [r[k] for r in recs if r.get(k)]; return max(v) if v else None
+    def mn(k):
+        v = [r[k] for r in recs if r.get(k)]; return min(v) if v else None
+    created, scheduled, ready = mn("created"), mx("scheduled"), mx("ready")
+    first_running, gang_up, app_end = mn("app_start"), mx("app_start"), mx("app_end")
+    starts = [r["app_start"] for r in recs if r.get("app_start")]
+    worker_idle = None
+    if gang_up and starts:
+        worker_idle = round(sum((gang_up - s).total_seconds() for s in starts), 2)
+    return dict(created=created, scheduled=scheduled, ready=ready,
+                first_running=first_running, gang_up=gang_up, app_end=app_end,
+                worker_idle_node_s=worker_idle)
+
+
 def counts(pods):
     sched = ready = done = 0
     for p in pods:
@@ -188,7 +261,8 @@ def run_arm(sched, batch, args):
             yaml.safe_dump(render(g, sched, args.cpus_per_pod), f)
         res = kubectl("apply", "-f", mf, check=False)
         g["manifest"] = mf
-        g.update(placed_at=None, ready_at=None, done_at=None, status="pending")
+        g.update(placed_at=None, ready_at=None, done_at=None, status="pending",
+                 pod_recs={})
         if res.returncode != 0:
             g["status"] = "apply_failed"
             print(f"  ! apply FAILED for {g['name']}: {res.stderr.strip().splitlines()[-1] if res.stderr.strip() else res.stdout.strip()}")
@@ -207,6 +281,7 @@ def run_arm(sched, batch, args):
             break
         for g in pending:
             pods = gang_pods(g["name"])
+            update_pod_recs(g["pod_recs"], pods)   # latch per-pod times WHILE alive
             sched_n, ready_n, done_n = counts(pods)
             if g["placed_at"] is None and sched_n >= g["size"]:
                 g["placed_at"] = now()                       # whole gang placed
@@ -231,33 +306,55 @@ def run_arm(sched, batch, args):
     def dur(a, b):
         return round((b - a).total_seconds(), 2) if (a and b) else ""
     rows = []
+    pod_rows = []
     for g in batch:
         pods = g.get("final_pods") or gang_pods(g["name"])
         if not g.get("final_pods"):                 # not terminal: grab logs now
             save_logs(g["name"], arm_dir)
+        update_pod_recs(g["pod_recs"], pods)         # final latch from last snapshot
         layout = node_layout(pods)
+        recs = list(g["pod_recs"].values())
+        m = gang_metrics(recs)
+        # legacy gang-level view (kept for back-compat with any old tooling)
         ts = gang_timestamps(pods)
-        # stage durations:
-        pending_s = dur(ts["created"], ts["scheduled"])     # submit -> gang placed (queue + sched)
-        startup_s = dur(ts["scheduled"], ts["ready"])        # placed -> ready (pull + Flux quorum)
-        apprun_s  = dur(ts["app_start"], ts["app_end"])      # TRUE application run time
-        total_s   = dur(ts["created"], ts["app_end"])        # admission -> app done
-        # also absolute offsets from batch start (for makespan / Gantt)
-        placed_after_s = dur(t0, ts["scheduled"])
-        done_after_s   = dur(t0, ts["app_end"])
+        # stage durations, now from sign-correct per-pod metrics:
+        pending_s = dur(m["created"], m["scheduled"])    # submit -> gang placed
+        startup_s = dur(m["scheduled"], m["ready"])       # placed -> all ready
+        apprun_s  = dur(m["first_running"], m["app_end"]) # first rank up -> done
+        total_s   = dur(m["created"], m["app_end"])       # admission -> app done
+        # NEW exact metrics (the ones the paper should use):
+        assembly_span_s = dur(m["first_running"], m["gang_up"])  # first up -> all up
+        run_s           = dur(m["gang_up"], m["app_end"])        # WHOLE GANG UP -> done
+        worker_idle_node_s = m["worker_idle_node_s"]             # exact, >=0
+        placed_after_s = dur(t0, m["scheduled"])
+        done_after_s   = dur(t0, m["app_end"])
         rows.append(dict(
             scheduler=sched, gang=g["name"], app=g["app"],
             size=g["size"], ranks=g["size"] * RANKS_PER_POD,
             final_status=g["status"],
             pending_s=pending_s, startup_s=startup_s, apprun_s=apprun_s, total_s=total_s,
+            assembly_span_s=assembly_span_s, run_s=run_s,
+            worker_idle_node_s=worker_idle_node_s,
             placed_after_s=placed_after_s, done_after_s=done_after_s,
-            created_at=ts["created"].isoformat() if ts["created"] else "",
-            scheduled_at=ts["scheduled"].isoformat() if ts["scheduled"] else "",
-            ready_at=ts["ready"].isoformat() if ts["ready"] else "",
-            app_start_at=ts["app_start"].isoformat() if ts["app_start"] else "",
-            app_end_at=ts["app_end"].isoformat() if ts["app_end"] else "",
+            created_at=m["created"].isoformat() if m["created"] else "",
+            scheduled_at=m["scheduled"].isoformat() if m["scheduled"] else "",
+            ready_at=m["ready"].isoformat() if m["ready"] else "",
+            first_running_at=m["first_running"].isoformat() if m["first_running"] else "",
+            gang_up_at=m["gang_up"].isoformat() if m["gang_up"] else "",
+            app_start_at=m["first_running"].isoformat() if m["first_running"] else "",
+            app_end_at=m["app_end"].isoformat() if m["app_end"] else "",
             nodes=len([n for n in layout if n != "<pending>"]),
             node_layout=json.dumps(layout)))
+        # PER-POD rows: everything needed to recompute any gang metric offline
+        for pname, r in sorted(g["pod_recs"].items()):
+            pod_rows.append(dict(
+                scheduler=sched, gang=g["name"], app=g["app"], size=g["size"],
+                pod=pname, node=r.get("node") or "",
+                created_at=r["created"].isoformat() if r.get("created") else "",
+                scheduled_at=r["scheduled"].isoformat() if r.get("scheduled") else "",
+                ready_at=r["ready"].isoformat() if r.get("ready") else "",
+                app_start_at=r["app_start"].isoformat() if r.get("app_start") else "",
+                app_end_at=r["app_end"].isoformat() if r.get("app_end") else ""))
         kubectl("delete", "-f", g["manifest"], "--ignore-not-found", "--wait=false", check=False)
     for g in batch:
         kubectl("wait", "--for=delete", "pod", "-n", NS,
@@ -268,7 +365,7 @@ def run_arm(sched, batch, args):
     print(f"[{sched}] placed {len(placed)}/{len(batch)} gangs; "
           f"partial/pending: {sum(1 for g in batch if g['status'] in ('partial','pending'))}; "
           f"makespan={makespan}")
-    return rows
+    return rows, pod_rows
 
 
 def main():
@@ -290,10 +387,16 @@ def main():
     os.makedirs(args.out_dir, exist_ok=True)
     fields = ["scheduler", "rep", "gang", "app", "size", "ranks", "final_status",
               "pending_s", "startup_s", "apprun_s", "total_s",
+              "assembly_span_s", "run_s", "worker_idle_node_s",
               "placed_after_s", "done_after_s",
-              "created_at", "scheduled_at", "ready_at", "app_start_at", "app_end_at",
+              "created_at", "scheduled_at", "ready_at",
+              "first_running_at", "gang_up_at", "app_start_at", "app_end_at",
               "nodes", "node_layout"]
+    pod_fields = ["scheduler", "rep", "gang", "app", "size", "pod", "node",
+                  "created_at", "scheduled_at", "ready_at",
+                  "app_start_at", "app_end_at"]
     rows = []
+    pod_rows = []
     for sched in args.arms:
         print(f"\n=== scheduler arm: {sched} ===")
         for rep in range(1, args.reps + 1):
@@ -301,9 +404,13 @@ def main():
             demand = sum(g["size"] for g in batch)
             print(f"--- rep {rep}: {len(batch)} gangs, {demand} pods vs {args.nodes} nodes "
                   f"({'CONTENDED' if demand > args.nodes else 'fits'}) ---")
-            for r in run_arm(sched, batch, args):
+            grows, prows = run_arm(sched, batch, args)
+            for r in grows:
                 r["rep"] = rep
                 rows.append(r)
+            for r in prows:
+                r["rep"] = rep
+                pod_rows.append(r)
 
     csv_path = f"{args.out_dir}/contention.csv"
     hdr = not os.path.exists(csv_path)
@@ -312,7 +419,15 @@ def main():
         if hdr:
             w.writeheader()
         w.writerows(rows)
-    print(f"\nwrote {csv_path} (+{len(rows)} rows); logs under {args.out_dir}/<arm>/")
+    pod_path = f"{args.out_dir}/contention_pods.csv"
+    phdr = not os.path.exists(pod_path)
+    with open(pod_path, "a", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=pod_fields)
+        if phdr:
+            w.writeheader()
+        w.writerows(pod_rows)
+    print(f"\nwrote {csv_path} (+{len(rows)} gang rows) and {pod_path} "
+          f"(+{len(pod_rows)} pod rows); logs under {args.out_dir}/<arm>/")
 
 
 if __name__ == "__main__":

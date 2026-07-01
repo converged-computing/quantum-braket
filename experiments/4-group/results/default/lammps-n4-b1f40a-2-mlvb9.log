@@ -1,0 +1,95 @@
+
+Flux install root: /mnt/flux/view
+
+Python version: /mnt/flux/view/bin/python3.14
+Python root: /mnt/flux/view/lib/python3.14
+PYTHONPATH is :/mnt/flux/view/lib/python3.14/site-packages
+PATH is /opt/amazon/openmpi/bin:/opt/amazon/efa/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/mnt/flux/view/bin
+/mnt/flux/view/lib/libpython3.14.so
+/mnt/flux/view/lib/libpython3.so
+/mnt/flux/view/lib/libpython3.14.so.1.0
+ls: cannot access '/mnt/flux/view/lib/libpython3.11.so.1.0': No such file or directory
+
+Hello user root
+
+🌟️ Curve Certificate
+curve.cert
+#   ****  Generated on 2023-04-26 22:54:42 by CZMQ  ****
+#   ZeroMQ CURVE **Secret** Certificate
+#   DO NOT PROVIDE THIS FILE TO OTHER USERS nor change its permissions.
+    
+metadata
+    name = "flux-cert-generator"
+    keygen.hostname = "lammps-n4-b1f40a-0"
+curve
+    public-key = "I^J}7b6-]l}*Qk5ZVUJ)oAP9j^A:rlSEtHqc4:Y?"
+    secret-key = "nBUGle%SBX-HmxS!#{J:MC12K{x9{?DpxmO6XLeD"
+
+📦 Resources
+flux R encode --hosts=lammps-n4-b1f40a-[0-3] --local
+{"version": 1, "execution": {"R_lite": [{"rank": "0-3", "children": {"core": "0-87"}}], "starttime": 0.0, "expiration": 0.0, "nodelist": ["lammps-n4-b1f40a-[0-3]"]}}
+👋 Hello, I'm lammps-n4-b1f40a-2
+The main host is lammps-n4-b1f40a-0
+The working directory is /opt/hns, contents include:
+README.txt	ffield.reax.hns  log.8Mar18.reaxc.hns.g++.1
+data.hns-equil	in.reaxc.hns	 log.8Mar18.reaxc.hns.g++.4
+🚩️ Flux Option Flags defined
+🌀 flux start  -o --config /mnt/flux/config/etc/flux/config -Scron.directory=/mnt/flux/config/etc/flux/system/cron.d   -Stbon.fanout=256   -Srundir=/mnt/flux/config/run/flux    -Sstatedir=/mnt/flux/config/var/lib/flux -Slocal-uri=local:///mnt/flux/config/run/flux/local -Stbon.connect_timeout=5s     -Slog-stderr-level=6    -Slog-stderr-mode=local
+<4>overlay.warning[2]: unable to resolve upstream peer lammps-n4-b1f40a-0.lammps-n4-b1f40a.default.svc.cluster.local: Name or service not known
+<6>broker.info[2]: builtins-success: load-builtins->join 26.1145ms
+<6>broker.info[2]: parent-ready: join->config-sync 4.99408s
+<6>broker.info[2]: sync-success: config-sync->init 0.485135ms
+<6>broker.info[2]: rc1.0: flux modprobe rc1 Exited (rc=0) 0.9s
+<6>broker.info[2]: rc1-success: init->quorum 0.905082s
+<6>broker.info[2]: quorum-full: quorum->run 0.201109s
+<6>broker.info[2]: shutdown: run->cleanup 25.0848s
+<6>broker.info[2]: cleanup-none: cleanup->shutdown 0.022875ms
+<6>broker.info[2]: children-none: shutdown->finalize 0.054603ms
+<6>broker.info[2]: rc3.0: flux modprobe rc3 Exited (rc=0) 0.1s
+<6>broker.info[2]: rc3-success: finalize->goodbye 0.145946s
+<6>broker.info[2]: goodbye: goodbye->unload-builtins 0.26992ms
+<6>broker.info[2]: builtins-done: unload-builtins->exit 0.503381ms
+The follower worker exited cleanly. Goodbye!
+Hello I am hostname lammps-n4-b1f40a-2 running setup.
+Flux install root: /opt/view
+
+🐸 Broker Configuration
+[access]
+allow-guest-user = true
+allow-root-owner = true
+
+# Point to resource definition generated with flux-R(1).
+[resource]
+path = "/mnt/flux/config/etc/flux/system/R"
+
+[bootstrap]
+curve_cert = "/mnt/flux/config/curve/curve.cert"
+default_port = 8050
+default_bind = "tcp://eth0:%p"
+default_connect = "tcp://%h.lammps-n4-b1f40a.default.svc.cluster.local:%p"
+hosts = [
+{ host="lammps-n4-b1f40a-[0-3]"},
+]		
+
+
+[archive]
+dbpath = "/mnt/flux/config/var/lib/flux/job-archive.sqlite"
+period = "1m"
+busytimeout = "50s"
+
+[sched-fluxion-qmanager]
+queue-policy = "fcfs"
+
+🌟️ Curve Certificate
+#   ****  Generated on 2023-04-26 22:54:42 by CZMQ  ****
+#   ZeroMQ CURVE **Secret** Certificate
+#   DO NOT PROVIDE THIS FILE TO OTHER USERS nor change its permissions.
+    
+metadata
+    name = "flux-cert-generator"
+    keygen.hostname = "lammps-n4-b1f40a-0"
+curve
+    public-key = "I^J}7b6-]l}*Qk5ZVUJ)oAP9j^A:rlSEtHqc4:Y?"
+    secret-key = "nBUGle%SBX-HmxS!#{J:MC12K{x9{?DpxmO6XLeD"
+Moving content from /opt/view to be in shared volume at /mnt/flux
+Application is done.

@@ -1,0 +1,7 @@
+experiment,arm,policy,repeat,n_shots,group_size,realized_backend,stamped_backend,realized_cost_usd,queue_at_submit,qpu_queue_wait_s,backend_latency_s,producer_wall_s,producer_phase,timestamp
+queue,baseline,random,0,100,2,iqm_emerald,iqm_emerald,0.4450,2,13480.56,13483.20,13484.61,Succeeded,2026-06-30T07:21:41.643109+00:00
+queue,min-queue,"online-only,min-queue",0,100,2,iqm_garnet,iqm_garnet,0.4450,0,182.05,184.91,185.95,Succeeded,2026-06-30T07:25:17.653511+00:00
+queue,baseline,random,1,100,2,rigetti_cepheus,rigetti_cepheus,0.3900,0,5672.98,5675.62,5676.68,Succeeded,2026-06-30T09:00:19.476109+00:00
+queue,min-queue,"online-only,min-queue",1,100,2,iqm_emerald,iqm_emerald,0.4450,0,51.63,54.31,55.50,Succeeded,2026-06-30T09:01:51.285596+00:00
+queue,baseline,random,2,100,2,iqm_emerald,iqm_emerald,0.4450,1,36.31,38.97,40.12,Succeeded,2026-06-30T09:03:00.995850+00:00
+queue,min-queue,"online-only,min-queue",2,100,2,iqm_emerald,iqm_emerald,0.4450,0,47.87,50.22,51.36,Succeeded,2026-06-30T09:04:16.437558+00:00

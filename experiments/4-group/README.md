@@ -16,6 +16,12 @@ which is the point. Each gang is a MiniCluster, one pod per node.
 
 ## Run (4-node cluster)
 
+Install the Flux Operator:
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/flux-framework/flux-operator/refs/heads/main/examples/dist/flux-operator.yaml
+```
+
 ```bash
 # default arm first (before installing Fluence):
 python3 run_experiment.py --arms default --nodes 4
