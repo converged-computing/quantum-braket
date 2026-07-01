@@ -255,6 +255,8 @@ def main():
     plot(df, out, args.show)
     by_size_out = os.path.splitext(out)[0] + "_bysize.png"
     plot_by_size(df, by_size_out, args.show)
+    by_size_out = os.path.splitext(out)[0] + "_bysize.svg"
+    plot_by_size(df, by_size_out, args.show)
 
 
 if __name__ == "__main__":

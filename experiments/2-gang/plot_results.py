@@ -356,8 +356,13 @@ def main():
             name = (os.path.splitext(os.path.basename(paths[0]))[0]
                     + f"-cross-{tag}.png")
             plot_cross(sub_rows, out_path(name), title, args.workers)
+            name = (os.path.splitext(os.path.basename(paths[0]))[0]
+                    + f"-cross-{tag}.svg")
+            plot_cross(sub_rows, out_path(name), title, args.workers)
     else:
         name = os.path.splitext(os.path.basename(paths[0]))[0] + ".png"
+        plot_single(rows, backends[0], out_path(name), args.title)
+        name = os.path.splitext(os.path.basename(paths[0]))[0] + ".svg"
         plot_single(rows, backends[0], out_path(name), args.title)
 
     print("\nstats:")

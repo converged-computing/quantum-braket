@@ -24,7 +24,7 @@ plugin pins the cheapest satisfying backend every time.
 
 ### Arms
 
-- **baseline (no selection):** the gang's quantum pod carries a capability
+- **baseline (no selection):** the gang Job's pods carry a capability
   request (e.g. gate-based, `require:min_qubits=N`) but **no**
   `select-policy` annotation and **no** `backend` pin. Fluence matches it against
   the resource graph using its configured match policy. Realized backend =
@@ -137,7 +137,7 @@ the choice to be meaningful.
 
 - `pinned_backend` + `queue_at_submit` per run per arm (from the get-device
   snapshot).
-- realized queue wait / leader wall time per run.
+- realized queue wait / producer wall time per run.
 - Did min-queue pick the lowest-queue candidate at submit? (yes/no per run).
 
 ### Expected result (stated honestly)
@@ -221,7 +221,7 @@ QPU task cost = `per_task + shots * per_shot`. With per_task=$0.30:
 - 100 shots @ $0.0009 (Rigetti) = $0.39/task
 - 100 shots @ $0.00145 (IQM)   = $0.445/task
 
-A gang submits ONE quantum task (the leader). So cost A worst case (all baseline
+A gang submits ONE quantum task (the Fluence-created producer). So cost A worst case (all baseline
 runs hit a QPU, R=10) ≈ 10 * ~$0.40 = ~$4 for the baseline arm; min-cost arm ≈ $0
 (simulators). Cost B (QPU-only, both arms QPU, R=5, 2 arms) ≈ 10 * ~$0.40 = ~$4.
 Both well under $50 at small shots — but RE-CHECK current per-shot prices and

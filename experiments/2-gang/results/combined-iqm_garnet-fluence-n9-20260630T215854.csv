@@ -1,0 +1,2 @@
+run_name,scheduler,backend,n_pods,n_consumers,n_shots,n_nodes,seed,job_ok,batch_wall_s,total_consumer_idle_s,mean_consumer_idle_s,qpu_queue_wait_s,n_consumers_observed,timestamp
+gang-iqm-garnet-fluence-n9-q10,fluence,iqm_garnet,9,8,100,10,42,True,55.44,46.344,5.793,5.494,8,2026-06-30T21:58:54.033301+00:00

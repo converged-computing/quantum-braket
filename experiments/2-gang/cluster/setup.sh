@@ -95,10 +95,7 @@ FLUENCE_REPO="https://raw.githubusercontent.com/converged-computing/fluence/${FL
 kubectl apply -f "$HERE/../../../hack/fluence-resources.yaml"
 
 log "Installing Fluence"
-cd /home/vanessa/Desktop/Code/fluence-refactor/fluence
-make test-deploy-recreate
-cd -
-# kubectl apply -f "$FLUENCE_REPO/deploy/fluence.yaml"
+kubectl apply -f "$FLUENCE_REPO/deploy/fluence.yaml"
 kubectl rollout status -n kube-system deployment/fluence --timeout=180s
 kubectl rollout status -n kube-system deployment/fluence-webhook --timeout=120s
 
@@ -114,9 +111,7 @@ kubectl rollout status  -n kube-system deployment/fluence-webhook --timeout=120s
 # resource on nodes. Without it the scheduler cannot satisfy the leader's QPU
 # request, so the quantum handler never fires. (Required for the Fluence arm.)
 log "Installing Fluence device plugin (advertises the qpu resource)"
-cd /home/vanessa/Desktop/Code/fluence-refactor/fluence
 kubectl apply -f "$FLUENCE_REPO/deploy/device-plugin.yaml"
-cd -
 kubectl rollout status -n kube-system daemonset/fluence-deviceplugin --timeout=120s
 
 log "Waiting for the webhook to be ready"

@@ -1,0 +1,2 @@
+run_name,scheduler,backend,n_pods,n_consumers,n_shots,n_nodes,seed,job_ok,batch_wall_s,total_consumer_idle_s,mean_consumer_idle_s,qpu_queue_wait_s,n_consumers_observed,timestamp
+gang-iqm-emerald-default-n3-q10,default,iqm_emerald,3,2,100,10,42,True,23.442,18.089,9.045,6.818,2,2026-06-30T21:06:16.760176+00:00

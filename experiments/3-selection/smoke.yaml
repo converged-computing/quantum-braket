@@ -1,58 +1,53 @@
-# smoke.yaml — minimal check that the Fluence STANDALONE quantum path works end
-# to end for the selection experiment, with NO cost (the command is a sleep, so
-# nothing is submitted to a backend).
+# smoke.yaml — checks the producer/consumer wiring with NO Braket and NO cost.
+# A 2-pod Indexed Job (busybox) requesting the qpu resource, coordination=shared.
 #
-# This experiment uses standalone quantum pods (no group label, no role, no
-# gating). Per the current Fluence model, a quantum pod with no group label is
-# scheduled standalone: Fluence matches it against the resource graph, injects
-# the matched backend as FLUXION_BACKEND (+ FLUXION_<attr>, e.g. FLUXION_ARN),
-# stages the Python interceptor, and lets the pod run immediately (it is NOT
-# gated, because there are no workers to coordinate).
+# What Fluence should do (because the pods request the QPU resource and ask for
+# shared coordination): promote completion index 0 to the PRODUCER — its own
+# group-of-one smoke-producer, NOT gated, FLUENCE_COORDINATION_ROLE=producer — and
+# gate completion index 1 as a CONSUMER (FLUENCE_COORDINATION_ROLE=consumer).
+# Because busybox never really submits, the consumer stays gated (no task id is
+# ever stamped); that is the expected observable here — we are checking role
+# assignment + gating, not a Braket round trip.
 #
-# What to verify after `kubectl apply -f smoke.yaml`:
-#   1. the pod is NOT gated (runs straight away — no quantum.braket/ready gate):
-#        kubectl get pod sel-smoke -o jsonpath='{.spec.schedulingGates}'   # -> empty
-#   2. Fluence injected the matched backend env:
-#        kubectl exec sel-smoke -c sampler -- printenv FLUXION_BACKEND       # -> e.g. sv1
-#        kubectl exec sel-smoke -c sampler -- printenv FLUXION_ARN           # -> device ARN
-#   3. the interceptor was staged (init container present) + PYTHONPATH set:
-#        kubectl get pod sel-smoke -o jsonpath='{.spec.initContainers[*].name}'  # includes fluence-stage
-#        kubectl exec sel-smoke -c sampler -- printenv PYTHONPATH            # -> /opt/fluence-staged
+# Verify after `kubectl apply -f smoke.yaml`:
+#   kubectl get pods -l job-name=smoke \
+#     -o jsonpath='{range .items[*]}{.metadata.annotations.batch\.kubernetes\.io/job-completion-index}{" gates="}{.spec.schedulingGates}{"\n"}{end}'
+#     # index 0 -> no gate; index 1 -> quantum.braket/ready gate
+#   IDX0=$(kubectl get pods -l job-name=smoke,batch.kubernetes.io/job-completion-index=0 -o jsonpath='{.items[0].metadata.name}')
+#   kubectl exec $IDX0 -c gang -- printenv FLUENCE_COORDINATION_ROLE   # producer
 #
-# To smoke-test CLIENT-SIDE selection too, submit through the plugin instead:
-#        kubectl fluence apply -f smoke.yaml --attributes cost-attributes.yaml
-#   then confirm the require-backend pin was stamped:
-#        kubectl get pod sel-smoke -o jsonpath='{.metadata.annotations.fluence\.flux-framework\.org/require-backend}'
-#
-# Cleanup:  kubectl delete -f smoke.yaml
-#
-# NOTE: the pod requests the QPU resource (fluxion.flux-framework.org/qpu) so
-# Fluence's quantum + fluxion handlers engage — that request is what triggers the
-# standalone interceptor/env path. No task is ever submitted (the command is a
-# sleep), so this costs nothing.
+# Cleanup: kubectl delete -f smoke.yaml ; kubectl delete podgroup smoke smoke-producer --ignore-not-found
 ---
-apiVersion: v1
-kind: Pod
+apiVersion: batch/v1
+kind: Job
 metadata:
-  name: sel-smoke
-  labels:
-    app: sel-smoke
-  # Add the select-* annotations below (and submit via `kubectl fluence apply`)
-  # to also smoke-test client-side selection. Left off here so a plain
-  # `kubectl apply` exercises the capability-only (baseline) path.
-  # annotations:
-  #   fluence.flux-framework.org/select-backend: "braket"
-  #   fluence.flux-framework.org/select-policy: "min-cost"
-  #   fluence.flux-framework.org/select-candidates: "sv1,dm1,tn1"
+  name: smoke
 spec:
-  schedulerName: fluence
-  restartPolicy: Never
-  containers:
-    - name: sampler
-      image: busybox:1.36
-      command: ["sh", "-c", "echo FLUXION_BACKEND=$FLUXION_BACKEND FLUXION_ARN=$FLUXION_ARN; sleep 600"]
-      resources:
-        requests:
-          fluxion.flux-framework.org/qpu: "1"
-        limits:
-          fluxion.flux-framework.org/qpu: "1"
+  completionMode: Indexed
+  parallelism: 2
+  completions: 2
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        fluence.flux-framework.org/group: smoke
+      annotations:
+        fluence.flux-framework.org/coordination: shared
+        fluence.flux-framework.org/require-qrmi_type: braket-gate
+    spec:
+      schedulerName: fluence
+      restartPolicy: Never
+      containers:
+        - name: gang
+          image: busybox:1.36
+          command: ["sh", "-c", "echo role=$FLUENCE_COORDINATION_ROLE idx=$JOB_COMPLETION_INDEX; sleep 300"]
+          env:
+            - name: JOB_COMPLETION_INDEX
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['batch.kubernetes.io/job-completion-index']
+          resources:
+            requests:
+              fluxion.flux-framework.org/qpu: "1"
+            limits:
+              fluxion.flux-framework.org/qpu: "1"

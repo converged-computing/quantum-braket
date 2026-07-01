@@ -1,0 +1,2 @@
+run_name,scheduler,backend,n_pods,n_consumers,n_shots,n_nodes,seed,job_ok,batch_wall_s,total_consumer_idle_s,mean_consumer_idle_s,qpu_queue_wait_s,n_consumers_observed,timestamp
+gang-iqm-garnet-default-n9-q10,default,iqm_garnet,9,8,100,10,42,True,22.277,76.698,9.587,4.752,8,2026-06-30T21:46:18.121671+00:00

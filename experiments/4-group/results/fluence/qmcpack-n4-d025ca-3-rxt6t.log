@@ -1,0 +1,94 @@
+Hello I am hostname qmcpack-n4-d025ca-3 running setup.
+Flux install root: /opt/view
+
+🐸 Broker Configuration
+[access]
+allow-guest-user = true
+allow-root-owner = true
+
+# Point to resource definition generated with flux-R(1).
+[resource]
+path = "/mnt/flux/config/etc/flux/system/R"
+
+[bootstrap]
+curve_cert = "/mnt/flux/config/curve/curve.cert"
+default_port = 8050
+default_bind = "tcp://eth0:%p"
+default_connect = "tcp://%h.qmcpack-n4-d025ca.default.svc.cluster.local:%p"
+hosts = [
+{ host="qmcpack-n4-d025ca-[0-3]"},
+]		
+
+
+[archive]
+dbpath = "/mnt/flux/config/var/lib/flux/job-archive.sqlite"
+period = "1m"
+busytimeout = "50s"
+
+[sched-fluxion-qmanager]
+queue-policy = "fcfs"
+
+🌟️ Curve Certificate
+#   ****  Generated on 2023-04-26 22:54:42 by CZMQ  ****
+#   ZeroMQ CURVE **Secret** Certificate
+#   DO NOT PROVIDE THIS FILE TO OTHER USERS nor change its permissions.
+    
+metadata
+    name = "flux-cert-generator"
+    keygen.hostname = "qmcpack-n4-d025ca-0"
+curve
+    public-key = "<g?ntup+DEy=ry4H$L0]vaxZ+U>S9127&1{Krva*"
+    secret-key = "*Bc&mx[Q)/&0-ovDv2/?i9F%!skl/Xv%hhK!C6g<"
+Moving content from /opt/view to be in shared volume at /mnt/flux
+Application is done.
+
+Flux install root: /mnt/flux/view
+
+Python version: /mnt/flux/view/bin/python3.14
+Python root: /mnt/flux/view/lib/python3.14
+PYTHONPATH is :/mnt/flux/view/lib/python3.14/site-packages
+PATH is /opt/amazon/openmpi/bin:/opt/amazon/efa/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/mnt/flux/view/bin
+/mnt/flux/view/lib/libpython3.14.so
+/mnt/flux/view/lib/libpython3.so
+/mnt/flux/view/lib/libpython3.14.so.1.0
+ls: cannot access '/mnt/flux/view/lib/libpython3.11.so.1.0': No such file or directory
+
+Hello user root
+
+🌟️ Curve Certificate
+curve.cert
+#   ****  Generated on 2023-04-26 22:54:42 by CZMQ  ****
+#   ZeroMQ CURVE **Secret** Certificate
+#   DO NOT PROVIDE THIS FILE TO OTHER USERS nor change its permissions.
+    
+metadata
+    name = "flux-cert-generator"
+    keygen.hostname = "qmcpack-n4-d025ca-0"
+curve
+    public-key = "<g?ntup+DEy=ry4H$L0]vaxZ+U>S9127&1{Krva*"
+    secret-key = "*Bc&mx[Q)/&0-ovDv2/?i9F%!skl/Xv%hhK!C6g<"
+
+📦 Resources
+flux R encode --hosts=qmcpack-n4-d025ca-[0-3] --local
+{"version": 1, "execution": {"R_lite": [{"rank": "0-3", "children": {"core": "0-87"}}], "starttime": 0.0, "expiration": 0.0, "nodelist": ["qmcpack-n4-d025ca-[0-3]"]}}
+👋 Hello, I'm qmcpack-n4-d025ca-3
+The main host is qmcpack-n4-d025ca-0
+The working directory is /opt/smoke, contents include:
+CMakeLists.txt	h2.wfn.xml	       h2_orb_opt.xml		  h2_vmc.xml
+h2.ptcl.xml	h2.wfn_spindepjas.xml  h2_orb_opt_spindepjas.xml
+🚩️ Flux Option Flags defined
+🌀 flux start  -o --config /mnt/flux/config/etc/flux/config -Scron.directory=/mnt/flux/config/etc/flux/system/cron.d   -Stbon.fanout=256   -Srundir=/mnt/flux/config/run/flux    -Sstatedir=/mnt/flux/config/var/lib/flux -Slocal-uri=local:///mnt/flux/config/run/flux/local -Stbon.connect_timeout=5s     -Slog-stderr-level=6    -Slog-stderr-mode=local
+<6>broker.info[3]: builtins-success: load-builtins->join 4.00891ms
+<6>broker.info[3]: parent-ready: join->config-sync 2.28774ms
+<6>broker.info[3]: sync-success: config-sync->init 0.437666ms
+<6>broker.info[3]: rc1.0: flux modprobe rc1 Exited (rc=0) 1.3s
+<6>broker.info[3]: rc1-success: init->quorum 1.31072s
+<6>broker.info[3]: quorum-full: quorum->run 0.201228s
+<6>broker.info[3]: shutdown: run->cleanup 4.49426s
+<6>broker.info[3]: cleanup-none: cleanup->shutdown 0.026862ms
+<6>broker.info[3]: children-none: shutdown->finalize 0.061047ms
+<6>broker.info[3]: rc3.0: flux modprobe rc3 Exited (rc=0) 0.1s
+<6>broker.info[3]: rc3-success: finalize->goodbye 0.147547s
+<6>broker.info[3]: goodbye: goodbye->unload-builtins 0.239223ms
+<6>broker.info[3]: builtins-done: unload-builtins->exit 0.546417ms
+The follower worker exited cleanly. Goodbye!

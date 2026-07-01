@@ -1,82 +1,101 @@
 # manifests/gang-template.yaml
 #
-# A hybrid quantum gang: one leader + N workers, expressed as a SINGLE pod spec.
-# Pods are identical except for the fluence.flux-framework.org/role annotation;
-# role is DISCOVERED at runtime via $FLUENCE_ROLE (injected by Fluence from that
-# annotation) — gang.py reads it. One image, one spec, declared asymmetry.
+# The gang as an INDEXED batch/v1 Job — the workload shape Fluence's current
+# producer/consumer model needs. completionMode: Indexed makes the Job controller
+# stamp batch.kubernetes.io/job-completion-index on each pod; Fluence promotes
+# completion index 0 to the PRODUCER (its own group-of-one <RUN>-producer,
+# ungated, runs the single real submit) and gates the other N-1 as CONSUMERS (the
+# <RUN> gang) that fetch the producer's result by FLUENCE_QUANTUM_JOB_ID. Fluence
+# tells each pod which it is via FLUENCE_COORDINATION_ROLE; gang.py branches on
+# it. coordination: shared is REQUIRED — without it Fluence's default is
+# independent (every pod submits its own task => N tasks, N x cost).
 #
-# The LEADER additionally runs two init containers (problem-generator ->
-# problem.json, transpiler -> transpiled circuit) that populate the shared
-# /workspace volume the leader's gang container reads. Workers don't generate a
-# problem (they fetch results from S3), so the orchestrator attaches the init
-# containers to the leader only. The workspace volume itself is harmless on
-# workers (an empty dir they ignore), so it stays in the base template.
+# Fluence derives the gang name from the group label (and size from the Job's
+# completions), so we set the group label = the Job name.
 #
-# Templated tokens (replaced by the orchestrator):
-#   __RUN_NAME__   group name        __POD_NAME__  per-pod name (leader/worker-i)
-#   __ROLE__       leader|worker      __RUN_ID__   run id / S3 prefix
-#   __N_SHOTS__    shots              __N_WORKERS__ worker count (leader expected-workers)
-#   (select-* block) selection annotations on the leader (empty for baseline)
-#   __SCHEDULER__  schedulerName (fluence)
+# Backend honoring (no Fluence change): Fluence skips any env already set on the
+# container, so for the selection arm the orchestrator bakes the chosen backend
+# (FLUXION_ARN + FLUXION_BACKEND) into the pod template env; the producer is a
+# normal Job pod and inherits it directly, submitting to the selected backend.
+# Baseline bakes nothing -> Fluence capability match -> cost-blind.
+#
+# select-* go on the JOB top-level metadata (where `kubectl fluence` reads the
+# policy); require-qrmi_type + coordination + group label go on the POD template.
+#
+# Tokens (orchestrator-substituted):
+#   __RUN_NAME__       Job name = gang/group name
+#   __GROUP_SIZE__     parallelism = completions = gang size N (>=2 for shared)
+#   __RUN_ID__         run id (problem seed scope)
+#   __N_SHOTS__        shots for the single real submission
+#   __SCHEDULER__      schedulerName (fluence)
+#   (Job annotations)  the select-* block is inserted on the Job (selection arm)
+#                      or omitted (baseline) by the orchestrator
 ---
-apiVersion: v1
-kind: Pod
+apiVersion: batch/v1
+kind: Job
 metadata:
-  name: __POD_NAME__
+  name: __RUN_NAME__
   labels:
     app: quantum-gang
-    fluence.flux-framework.org/group: __RUN_NAME__
-  annotations:
-    fluence.flux-framework.org/role: __ROLE__
-    fluence.flux-framework.org/require-qrmi_type: braket-gate
-__SELECT_BLOCK__
+__JOB_ANNOTATIONS__
 spec:
-  schedulerName: __SCHEDULER__
-  restartPolicy: Never
-  containers:
-    - name: gang
-      image: ghcr.io/converged-computing/quantum-braket-gang-selection:latest
-      imagePullPolicy: Always
-      # Identical for leader and workers; gang.py reads $FLUENCE_ROLE (injected by
-      # Fluence from the role annotation) to choose run_leader()/run_worker().
-      env:
-        - name: RUN_ID
-          value: "__RUN_ID__"
-        - name: WORKSPACE
-          value: /workspace
-        - name: N_SHOTS
-          value: "__N_SHOTS__"
-        - name: N_WORKERS
-          value: "__N_WORKERS__"
-        - name: WORKER_TIMEOUT_S
-          value: "600"
-        - name: AWS_ACCESS_KEY_ID
-          valueFrom:
-            secretKeyRef:
-              name: aws-braket-credentials
-              key: AWS_ACCESS_KEY_ID
-        - name: AWS_SECRET_ACCESS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: aws-braket-credentials
-              key: AWS_SECRET_ACCESS_KEY
-        - name: AWS_DEFAULT_REGION
-          valueFrom:
-            secretKeyRef:
-              name: aws-braket-credentials
-              key: AWS_DEFAULT_REGION
-      volumeMounts:
+  completionMode: Indexed
+  parallelism: __GROUP_SIZE__
+  completions: __GROUP_SIZE__
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: quantum-gang
+        fluence.flux-framework.org/group: __RUN_NAME__
+      annotations:
+        fluence.flux-framework.org/coordination: shared
+        fluence.flux-framework.org/require-qrmi_type: braket-gate
+    spec:
+      schedulerName: __SCHEDULER__
+      restartPolicy: Never
+      containers:
+        - name: gang
+          image: ghcr.io/converged-computing/quantum-braket-gang-selection:latest
+          imagePullPolicy: Always
+          # One image, one entrypoint. gang.py branches only on
+          # FLUENCE_COORDINATION_ROLE (Fluence-set): consumer -> fetch the
+          # producer's result; producer/unset -> real submit. The orchestrator
+          # may append FLUXION_ARN/FLUXION_BACKEND here for the selection arm.
+          env:
+            - name: RUN_ID
+              value: "__RUN_ID__"
+            - name: WORKSPACE
+              value: /workspace
+            - name: N_SHOTS
+              value: "__N_SHOTS__"
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-braket-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-braket-credentials
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: AWS_DEFAULT_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: aws-braket-credentials
+                  key: AWS_DEFAULT_REGION
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+              fluxion.flux-framework.org/qpu: "1"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+              fluxion.flux-framework.org/qpu: "1"
+      volumes:
         - name: workspace
-          mountPath: /workspace
-      resources:
-        requests:
-          cpu: "500m"
-          memory: "512Mi"
-          fluxion.flux-framework.org/qpu: "1"
-        limits:
-          cpu: "2000m"
-          memory: "4Gi"
-          fluxion.flux-framework.org/qpu: "1"
-  volumes:
-    - name: workspace
-      emptyDir: {}
+          emptyDir: {}

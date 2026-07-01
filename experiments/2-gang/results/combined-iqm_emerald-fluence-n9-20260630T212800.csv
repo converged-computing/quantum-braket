@@ -1,0 +1,2 @@
+run_name,scheduler,backend,n_pods,n_consumers,n_shots,n_nodes,seed,job_ok,batch_wall_s,total_consumer_idle_s,mean_consumer_idle_s,qpu_queue_wait_s,n_consumers_observed,timestamp
+gang-iqm-emerald-fluence-n9-q10,fluence,iqm_emerald,9,8,100,10,42,True,53.526,47.806,5.976,5.629,8,2026-06-30T21:28:00.308567+00:00

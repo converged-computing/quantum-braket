@@ -9,10 +9,13 @@ The plugin resolves the backend on the client (using your credentials for the
 queue case) and pins it via the `fluence.flux-framework.org/backend` annotation,
 which Fluence honors at schedule time. Credentials never enter the cluster.
 
-The selection arm submits with a **single** `kubectl fluence apply -f sampler.yaml
---attributes cost-attributes.yaml`: the plugin resolves the backend, stamps the
-annotation, and applies in one shot — the user never hand-edits a manifest. The
-orchestrator reads the chosen backend from the plugin's stderr. (For a human at
+The selection arm uses `kubectl fluence select --attributes cost-attributes.yaml`
+to resolve the backend from the Job's policy; the orchestrator then bakes the
+chosen backend (`FLUXION_ARN`/`FLUXION_BACKEND`) into the Job's pod template env
+and applies it. The Fluence-created producer is a verbatim container copy, so it
+inherits that env and submits to the selected backend — Fluence honors it without
+any Fluence-side change. The orchestrator reads the chosen backend from the
+plugin's stderr. (For a human at
 a terminal, `kubectl fluence apply --confirm` shows the selection and prompts for
 approval before applying; the experiment does not use `--confirm` so runs proceed
 unattended.)
@@ -20,26 +23,26 @@ unattended.)
 See [`DESIGN.md`](DESIGN.md) for the full rationale, the match-policy caveat, and
 the budget math.
 
-**Workload shape.** This experiment measures *which backend is selected and what
-it costs*, not gang coordination. So the workload is the simplest thing that
-exercises selection: `--group-size` (default 2) **independent** quantum sampler
-pods per run, each requesting a QPU (`fluxion.flux-framework.org/qpu`), each
-having a backend selected (baseline: capability-only; selection arm: the plugin
-pins min-cost), each running and exiting on its own. There is **no gang, no
-leader/worker, no PodGroup, no gating** — those exist for the idle-reclamation
-story (Experiment 2), which is orthogonal to cost selection. Per the Fluence
-webhook, a quantum pod with no group label gets the backend injected and runs
-standalone (see `examples/quantum-pod.yaml` in the fluence repo).
+**Workload shape.** The workload is a **gang expressed as a `batch/v1` Job**
+(`--group-size` = parallelism, default 2). Fluence turns the Job's N pods into a
+gated, consumer gang (the "workers" — marked by Fluence via `FLUENCE_COORDINATION_ROLE`,
+no role annotation) and creates one `<job> producer (index 0)` pod (the "leader") that
+makes the single real submission to the selected backend; the gang members fetch
+that one task's result by job id. Exactly one quantum task is submitted per run
+regardless of N. The Job name is the gang/PodGroup name and its parallelism is
+the gang size — Fluence reads both from the Job owner, so there is no group label
+or group-size annotation to manage. We measure *which backend the producer ran
+on and what it cost*; the gang is the group abstraction the paper's story uses.
 
 ```
-5-selection/
+3-selection/
 ├── README.md               # this file
 ├── DESIGN.md               # hypotheses, methodology, caveats, budget
 ├── cost-attributes.yaml    # backend cost/capability table (the plugin's cost source)
 ├── run_selection.py        # orchestrator (both arms, both sub-experiments)
 ├── plot_selection.py       # renders results into img/
 ├── manifests/
-│   └── sampler-template.yaml  # independent QPU-requesting sampler pod, templated
+│   └── gang-template.yaml      # the gang as a batch/v1 Job, templated
 ├── results/                # CSVs land here
 └── img/                    # plots land here
 ```
@@ -94,7 +97,7 @@ Two sub-experiments, each with two arms:
 6. **AWS credentials inside the cluster** — the gang pods submit/read Braket
    tasks, so they mount an `aws-braket-credentials` secret as env vars (the
    template wires `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
-   `AWS_DEFAULT_REGION` via `secretKeyRef` on each sampler pod). Create it
+   `AWS_DEFAULT_REGION` via `secretKeyRef` on each gang pod). Create it
    in the experiment's namespace before running:
 
    ```sh
@@ -106,7 +109,7 @@ Two sub-experiments, each with two arms:
 
    (Add `-n <namespace>` if not using `default`; it must match `FLUENCE_NS` /
    where the pods run. Without this secret the pods fail to authenticate to
-   Braket and the sampler pods never produce a result.)
+   Braket and the producer never produces a result.)
 
 7. **Verify prices** in `cost-attributes.yaml` against the current AWS Braket
    pricing page. Braket has no per-device price API, so this table is the source
@@ -133,7 +136,40 @@ get a *distribution*. Both are valid — just report which. See `DESIGN.md`.
 ```sh
 # 10 repeats per arm; simulators + Rigetti + IQM; 100 shots (default)
 python3 run_selection.py --experiment cost --repeat 10
+```
+```console
+Experiment cost: arms=['baseline', 'min-cost'] pool=['sv1', 'dm1', 'tn1', 'rigetti_cepheus', 'iqm_garnet', 'iqm_emerald'] repeats=10
+  policy(selection arm) = min-cost
+  writing -> /home/vanessa/Desktop/Code/quantum-braket/experiments/3-selection/results/selection-cost-20260630T020131.csv
 
+  [baseline rep0] submitted as sel-cost-baseline-0-6abaf1
+  [min-cost rep0] submitted as sel-cost-min-cost-0-0dc07e  (stamped=dm1)
+  [baseline rep1] submitted as sel-cost-baseline-1-c9f8ac
+  [min-cost rep1] submitted as sel-cost-min-cost-1-ec4855  (stamped=dm1)
+  [baseline rep2] submitted as sel-cost-baseline-2-bfd199
+  [min-cost rep2] submitted as sel-cost-min-cost-2-d80792  (stamped=dm1)
+  [baseline rep3] submitted as sel-cost-baseline-3-4922cc
+  [min-cost rep3] submitted as sel-cost-min-cost-3-0594dd  (stamped=dm1)
+  [baseline rep4] submitted as sel-cost-baseline-4-04d485
+  [min-cost rep4] submitted as sel-cost-min-cost-4-cc12ca  (stamped=dm1)
+  [baseline rep5] submitted as sel-cost-baseline-5-598df1
+  [min-cost rep5] submitted as sel-cost-min-cost-5-acb911  (stamped=dm1)
+  [baseline rep6] submitted as sel-cost-baseline-6-f28e23
+  [min-cost rep6] submitted as sel-cost-min-cost-6-db1e10  (stamped=dm1)
+  [baseline rep7] submitted as sel-cost-baseline-7-2ae19a
+  [min-cost rep7] submitted as sel-cost-min-cost-7-8b931e  (stamped=dm1)
+  [baseline rep8] submitted as sel-cost-baseline-8-bf1edf
+  [min-cost rep8] submitted as sel-cost-min-cost-8-5b2628  (stamped=dm1)
+  [baseline rep9] submitted as sel-cost-baseline-9-c69997
+  [min-cost rep9] submitted as sel-cost-min-cost-9-4cda6c  (stamped=dm1)
+
+wrote 20 rows -> /home/vanessa/Desktop/Code/quantum-braket/experiments/3-selection/results/selection-cost-20260630T020131.csv
+
+summary:
+  baseline   cost $0.445±0.000  backends={'iqm_emerald': 10}
+  min-cost   cost $0.004±0.000  backends={'dm1': 10}
+```
+```bash
 # render
 python3 plot_selection.py        # writes img/selection-cost-<ts>.png
 ```
@@ -172,7 +208,7 @@ done
 ```
 
 Budget: per-task ≈ $0.30 + shots×per_shot. At 100 shots that's ≈ $0.39–0.45/task;
-each sampler pod submits one task. With group-size 2: 3 reps × 2 arms × 2 pods ≈ 12 tasks ≈ ~$5 at 100 shots. Stay well under $50.
+only the producer submits, so it is ONE task per run regardless of group size. 3 reps × 2 arms × 1 task ≈ 6 tasks ≈ ~$2.40 at 100 shots. Stay well under $50.
 
 ## Output
 
@@ -181,11 +217,11 @@ Each run appends a row to `results/selection-<exp>-<timestamp>.csv` with:
 ```
 experiment, arm, policy, repeat, n_shots, group_size,
 realized_backend, stamped_backend, realized_cost_usd, queue_at_submit,
-qpu_queue_wait_s, leader_wall_s, leader_phase, timestamp
+qpu_queue_wait_s, producer_wall_s, producer_phase, timestamp
 ```
 
-- `realized_backend` — what the sampler used (from its `TIMING
-  backend <name>` log line; falls back to the plugin's stamped choice).
+- `realized_backend` — what the producer ran on (from its `FLUXION_BACKEND=<name>`
+  / `device=<arn>` log line; falls back to the plugin's chosen backend).
 - `stamped_backend` — what `kubectl fluence` pinned (selection arms only).
 - `realized_cost_usd` — computed from `cost-attributes.yaml` + shot count, using
   the **same** formula the plugin uses, so accounting and selection agree.
@@ -210,11 +246,11 @@ backends each arm landed on).
   dispatch-time decision.
 - **Pricing is configured, not fetched**: keep `cost-attributes.yaml` current.
 - **Name parity**: attribute-file names must equal the resource-graph names.
-- **Realized backend from leader logs**: the orchestrator reads the chosen
-  backend from the leader's logs — it prefers a `FLUXION_BACKEND=<name>` line and
+- **Realized backend from producer logs**: the orchestrator reads the chosen
+  backend from the producer's logs — it prefers a `FLUXION_BACKEND=<name>` line and
   falls back to the `device=<arn>` line (mapping the ARN to a name via
   `cost-attributes.yaml`). Timings come from gang.py's `TIMING <key>_ts=<epoch>`
-  lines (`leader_start_ts`, `queued_ts`, `result_ts`, `workers_done_ts`). For the
+  lines (`start_ts`, `submit_ts`, `queued_ts`, `result_ts`, `end_ts`). For the
   selection arm the backend is also captured from the plugin's stamp at submit,
   so it's recorded even if log parsing misses. If gang.py's log format changes,
   update `_parse_timing` in `run_selection.py`.

@@ -25,7 +25,7 @@ python3 run_selection.py --experiment cost  --repeat 10   # simulators + QPUs, c
 python3 run_selection.py --experiment queue --repeat 3    # QPUs ONLY, real money
 ```
 
-The queue arm additionally costs real money (every run submits to a real QPU on both arms, no simulators in the pool), snapshots live queue depth at submit via `aws braket get-device` (recorded as `queue_at_submit`, the signal the policy acts on), and records the realized wait the task actually experienced (`qpu_queue_wait_s`, from the gang leader's `queued_ts` to `result_ts`).
+The queue arm additionally costs real money (every run submits to a real QPU on both arms, no simulators in the pool), snapshots live queue depth at submit via `aws braket get-device` (recorded as `queue_at_submit`, the signal the policy acts on), and records the realized wait the task actually experienced (`qpu_queue_wait_s`, from the producer's `queued_ts` to `result_ts`).
 
 ## Prerequisites beyond the cost experiment
 
@@ -95,7 +95,7 @@ No apply, no cost; shows what would be pinned.
 python3 run_selection.py --experiment queue --repeat 1 --dry-run
 ```
 
-Confirm 1 leader (`role: leader`, `select-policy: online-only,min-queue`, `require-qrmi_type: braket-gate`) plus worker(s), and that the dry-run prints the device the plugin would pin. The `dropped sv1/tn1/dm1` lines are expected: those are simulators, not queue candidates.
+Confirm the Job carries `select-policy: online-only,min-queue` (its pod template has `require-qrmi_type: braket-gate`) and that the dry-run prints the device the plugin would pin. The `dropped sv1/tn1/dm1` lines are expected: those are simulators, not queue candidates.
 
 ### One real rep first
 
@@ -103,15 +103,15 @@ A single real-money run, watched.
 
 ```sh
 python3 run_selection.py --experiment queue --repeat 1
-kubectl get pods -w        # leader Running+sidecar, worker gated -> ungates -> Succeeded
+kubectl get pods -w        # producer Running+sidecar; gang gated -> ungates -> Succeeded
 ```
 
-Then verify the pin actually bound (the min-queue leader must run on the device the plugin chose, not whatever the scheduler preferred):
+Then verify the producer ran on the chosen device (it makes the single real submission):
 
 ```sh
-kubectl get pod <min-queue-leader> -o jsonpath='{.metadata.annotations}' \
+kubectl get pod <job> producer (index 0) -o jsonpath='{.metadata.annotations}' \
   | tr ',' '\n' | grep require-backend     # want: require-backend: <chosen QPU>
-kubectl logs <min-queue-leader> | grep 'device='   # device ARN should match the pin
+kubectl logs <job> producer (index 0) | grep -E 'FLUXION_BACKEND=|device='   # should be the chosen device
 ```
 
 ### Full set

@@ -119,11 +119,17 @@ python3 run_experiment.py --backend sv1 --schedulers default fluence --n-consume
 python3 run_experiment.py --backend dm1 --schedulers default fluence --n-consumers 2 4 8 --repeat 5
 # python3 run_experiment.py --backend tn1 --schedulers default fluence --n-consumers 2 4 8 --repeat 5
 python3 run_experiment.py --backend rigetti_cepheus --schedulers default fluence --n-consumers 2 4 8 --repeat 5 --n-shots 100
-python3 run_experiment.py --backend iqm_garnet --schedulers default fluence --n-shots 100
-
+python3 run_experiment.py --backend iqm_emerald --schedulers default fluence --n-consumers 2 4 8 --repeat 5 --n-shots 100
 
 # Single arm only
 python3 run_experiment.py --backend sv1 --scheduler fluence
+
+# Experiment
+python3 plot_results.py \
+  results/combined-dm1-*.csv results/combined-*.csv \
+  results/combined-dm1-*.csv results/combined-sv1-*.csv \
+  results/combined-tn1-*.csv results/combined-rigetti_cepheus-*.csv \
+  --cross
 
 # Plot
 python3 plot_results.py results/combined-sv1-*.csv -o img/gang-sv1.png

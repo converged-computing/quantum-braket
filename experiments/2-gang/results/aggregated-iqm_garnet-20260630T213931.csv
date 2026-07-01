@@ -1,0 +1,7 @@
+scheduler,backend,n_pods,n_consumers,n_repeats,idle_mean_s,idle_stdev_s
+default,iqm_garnet,3,2,5,20.656,4.797
+default,iqm_garnet,5,4,5,41.836,9.387
+default,iqm_garnet,9,8,5,82.59,6.751
+fluence,iqm_garnet,3,2,5,6.087,0.023
+fluence,iqm_garnet,5,4,5,14.452,0.128
+fluence,iqm_garnet,9,8,5,44.003,7.254

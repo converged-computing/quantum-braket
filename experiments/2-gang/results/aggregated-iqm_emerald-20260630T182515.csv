@@ -1,0 +1,7 @@
+scheduler,backend,n_pods,n_consumers,n_repeats,idle_mean_s,idle_stdev_s
+default,iqm_emerald,3,2,5,3850.755,8558.125
+default,iqm_emerald,5,4,5,48.098,10.046
+default,iqm_emerald,9,8,5,88.785,18.256
+fluence,iqm_emerald,3,2,5,6.338,0.499
+fluence,iqm_emerald,5,4,5,15.043,0.684
+fluence,iqm_emerald,9,8,5,47.243,2.091
