@@ -188,8 +188,7 @@ prices first.
 ```sh
 # few repeats; QPUs only; 100 shots (default)
 python3 run_selection.py --experiment queue --repeat 3
-
-python3 plot_selection.py        # writes img/selection-queue-<ts>.png
+python3 plot_selection.py --combined both
 ```
 
 **Before paying:** snapshot the candidate queues so you don't run into a deep
